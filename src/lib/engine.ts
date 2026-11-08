@@ -152,7 +152,7 @@ export function recommend(profileIn: Profile): Recommendation {
   add(conn.id, sites, sites > 1 ? `${conn.reason} — one per site (${sites} sites)` : conn.reason);
 
   // Mobile lines: only when the owner asked for SIMs (otherwise offered as an optional add-on)
-  const wantsMobile = needs.has("mobile") || (profile.mobileLines ?? 0) > 0;
+  const wantsMobile = profile.mobileLines !== 0 && (needs.has("mobile") || (profile.mobileLines ?? 0) > 0);
   const lines = profile.mobileLines ?? (profile.segment === "multi" ? sites * 2 : profile.segment === "mfg" ? 3 : 2);
   if (wantsMobile && lines > 0) {
     const line = profile.segment === "prof" || profile.segment === "multi" || profile.segment === "mfg" ? "P08" : "P07";

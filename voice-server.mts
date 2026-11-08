@@ -262,7 +262,10 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       const session = freshSession(sessionId);
       if (!session) throw new Error("session not found");
       // Follow the language the owner is speaking (Sarvam's detection; advisorTurn also checks the script).
-      if (detected && LANGUAGE_BY_CODE[detected]) session.language = LANGUAGE_BY_CODE[detected];
+      // Don't let a short "Yes" / "16" (detected as English) flip a Punjabi/Hindi/... conversation.
+      const words = text.trim().split(/\s+/).length;
+      if (detected && LANGUAGE_BY_CODE[detected] && (LANGUAGE_BY_CODE[detected] !== "English" || session.language === "English" || words >= 4))
+        session.language = LANGUAGE_BY_CODE[detected];
       const tLlm = Date.now();
       const out = await voiceTurn(session, text.slice(0, 2000)); // fast path: one short LLM call
       console.log(`[timing] advisor ${Date.now() - tLlm}ms`);

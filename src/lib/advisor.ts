@@ -508,6 +508,66 @@ function planFacts(s: Session) {
   };
 }
 
+const NEED_KEYS = Object.keys(NEED_LABELS) as Need[];
+/** Products that a need brings into the plan (used when the owner asks to remove something). */
+const REMOVE_PRODUCTS: Partial<Record<Need, string[]>> = {
+  mobile: ["P07", "P08"], cctv: ["P23"], upi_pos: ["P19"], whatsapp: ["P15"], website: ["P18"], email: ["P16"],
+  backup: ["P17"], wifi_guest: ["P22"], security: ["P20"], failover: ["P09"], sms: ["P14"], static_ip: ["P11"],
+};
+
+/**
+ * AI fact reader: understands answers in any of our languages/scripts, short replies to the
+ * last question, and corrections ("not matlab, my city is Patiala"). Returns only validated,
+ * English-normalised values; anything doubtful is dropped. Falls back silently on error.
+ */
+async function llmFacts(s: Session, text: string): Promise<Record<string, unknown>> {
+  const lastQ = [...s.messages].reverse().find((m) => m.role === "assistant")?.text ?? "";
+  const prompt = `Extract business facts from the owner's latest message. The conversation may be in any Indian language or script.
+Last question we asked: ${JSON.stringify(lastQ.slice(-200))}
+We were waiting for: ${s.awaiting ?? "nothing specific"}
+Known so far: ${JSON.stringify({ businessType: s.profile.businessType, city: s.profile.city, employees: s.profile.employees, sites: s.profile.sites, hasGstin: s.profile.hasGstin })}
+Owner said: ${JSON.stringify(text)}
+Return ONLY JSON with any of these keys that the message clearly states (omit unknowns):
+{"businessType": short English description e.g. "kirana store","dental clinic",
+ "city": city name in English spelling e.g. "Patiala" (never a non-city word),
+ "employees": integer total people working,
+ "sites": integer number of shops/branches/locations,
+ "hasGstin": true/false,
+ "needs": array from ${JSON.stringify(NEED_KEYS)},
+ "simOnly": true only if they want ONLY SIM cards,
+ "remove": array from the same needs list for things they want removed / do not want (e.g. "delete the SIMs" -> ["mobile"]),
+ "cameras": integer number of CCTV cameras if stated, "mobileLines": integer number of SIMs/mobile lines if stated,
+ "confused": true if they did not understand our question}
+A bare answer like "16" or "yes" answers the question we were waiting for. Corrections override earlier values.`;
+  try {
+    const { message } = await chatCompletion({ messages: [{ role: "user", content: prompt }], max_tokens: 300, temperature: 0 }, VOICE_TARGET);
+    const raw = (message.content ?? "").match(/\{[\s\S]*\}/)?.[0];
+    if (!raw) return {};
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    if (j.confused === true) return {};
+    const out: Record<string, unknown> = {};
+    if (typeof j.businessType === "string" && /^[A-Za-z &'.-]{2,40}$/.test(j.businessType)) out.businessType = j.businessType;
+    if (typeof j.city === "string" && /^[A-Za-z .'-]{2,30}$/.test(j.city)) out.city = j.city;
+    if (Number.isInteger(j.employees) && (j.employees as number) > 0 && (j.employees as number) < 5000) out.employees = j.employees;
+    if (Number.isInteger(j.sites) && (j.sites as number) > 0 && (j.sites as number) < 500) out.sites = j.sites;
+    if (typeof j.hasGstin === "boolean") out.hasGstin = j.hasGstin;
+    if (Array.isArray(j.needs)) {
+      const n = j.needs.filter((x): x is Need => typeof x === "string" && NEED_KEYS.includes(x as Need));
+      if (n.length) out.needs = n;
+    }
+    if (j.simOnly === true) out.simOnly = true;
+    if (Array.isArray(j.remove)) {
+      const r = j.remove.filter((x): x is Need => typeof x === "string" && NEED_KEYS.includes(x as Need));
+      if (r.length) out.remove = r;
+    }
+    if (Number.isInteger(j.cameras) && (j.cameras as number) >= 0 && (j.cameras as number) < 200) out.cameras = j.cameras;
+    if (Number.isInteger(j.mobileLines) && (j.mobileLines as number) >= 0 && (j.mobileLines as number) < 500) out.mobileLines = j.mobileLines;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 type AskField = NonNullable<Session["awaiting"]>;
 const QUESTIONS: Record<AskField, { en: string; hi: string }> = {
   businessType: { en: "What kind of business do you run?", hi: "आपका किस तरह का बिज़नेस है?" },
@@ -632,14 +692,25 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   const gstinNote = gstinFromText(s, userText);
   const before = JSON.stringify(s.bundle);
   const prevNeeds = new Set(s.profile.needs ?? []);
-  const facts = { ...answerFor(s.awaiting, userText), ...extractFacts(userText) };
+  // Keyword reader first (instant), then the AI fact reader (any language/script, corrections) wins.
+  const facts: Record<string, unknown> = { ...answerFor(s.awaiting, userText), ...extractFacts(userText), ...(await llmFacts(s, userText)) };
+  const remove = (facts.remove as Need[] | undefined) ?? [];
+  delete facts.remove;
+  const countsBefore = JSON.stringify([s.profile.cameras, s.profile.mobileLines]);
+  if (remove.length) facts.needs = ((facts.needs as Need[] | undefined) ?? []).filter((n) => !remove.includes(n));
   if (Object.keys(facts).length) applyProfile(s, facts);
+  const removedNow = remove.filter((n) => s.profile.needs?.includes(n) || REMOVE_PRODUCTS[n]?.some((pid) => s.bundle.some((b) => b.productId === pid)));
+  if (remove.length) {
+    s.profile.needs = (s.profile.needs ?? []).filter((n) => !remove.includes(n));
+    if (remove.includes("mobile")) s.profile.mobileLines = 0;
+  }
+  const countsChanged = JSON.stringify([s.profile.cameras, s.profile.mobileLines]) !== countsBefore;
   const newNeeds = (s.profile.needs ?? []).filter((n) => !prevNeeds.has(n));
 
   const notes: string[] = gstinNote ? [gstinNote] : [];
   let cheaper: { option: string; monthlyPrice: string; oneTimeSetup: string }[] = [];
   const complete = missingFor(s.profile).length === 0 && (s.profile.needs?.length || s.profile.simOnly);
-  if (complete && (!s.bundle.length || newNeeds.length)) {
+  if (complete && (!s.bundle.length || newNeeds.length || removedNow.length || countsChanged)) {
     const r = doRecommend(s); // (re)build the plan from the rules
     if (r.ok && r.excluded?.length) notes.push(...r.excluded.map((e) => `${e.message}${e.alternative ? ` — alternative: ${e.alternative}` : ""}`));
   }
