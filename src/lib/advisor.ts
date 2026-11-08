@@ -501,8 +501,13 @@ function planFacts(s: Session) {
   if (!s.bundle.length) return null;
   const q = priceBundle(s.bundle, s.profile, { contractMonths: s.contractMonths, setupSpread: s.setupSpread });
   return {
-    items: q.lines.map((l) => `${l.name}${l.qty > 1 ? ` x${l.qty}` : ""} (${l.reason})`),
-    monthlyPrice: `₹${q.monthlyWithSetup.toLocaleString("en-IN")} per month`,
+    items: q.lines.map((l) => ({
+      product: `${l.name}${l.qty > 1 ? ` x${l.qty}` : ""}`,
+      ownPrice: `₹${l.monthly.toLocaleString("en-IN")} per month`,
+      whatItIs: l.description,
+      whyForYou: l.reason,
+    })),
+    monthlyPrice: `₹${q.monthlyWithSetup.toLocaleString("en-IN")} per month (TOTAL for the whole plan, not any single product)`,
     oneTimeSetup: q.setupSpread || !q.setupTotal ? "none" : `₹${q.setupTotal.toLocaleString("en-IN")} one-time`,
     liveInDays: q.etaDays,
   };
@@ -545,6 +550,7 @@ Return ONLY JSON with any of these keys that the message clearly states (omit un
  "simOnly": true only if they want ONLY SIM cards,
  "remove": array from the same needs list for things they want removed / do not want (e.g. "delete the SIMs" -> ["mobile"]),
  "cameras": integer number of CCTV cameras if stated, "mobileLines": integer number of SIMs/mobile lines if stated,
+ "wantsHuman": true if they ask to talk to / call / meet a person, agent or expert (any name),
  "confused": true if they did not understand our question}
 A bare answer like "16" or "yes" answers the question we were waiting for. Corrections override earlier values.`;
   try {
@@ -566,6 +572,7 @@ A bare answer like "16" or "yes" answers the question we were waiting for. Corre
       if (n.length) out.needs = n;
     }
     if (j.simOnly === true) out.simOnly = true;
+    if (j.wantsHuman === true) out.wantsHuman = true;
     if (Array.isArray(j.remove)) {
       const r = j.remove.filter((x): x is Need => typeof x === "string" && NEED_KEYS.includes(x as Need));
       if (r.length) out.remove = r;
@@ -706,6 +713,8 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   const facts: Record<string, unknown> = { ...answerFor(s.awaiting, userText), ...extractFacts(userText), ...(await llmFacts(s, userText)) };
   const remove = (facts.remove as Need[] | undefined) ?? [];
   delete facts.remove;
+  const aiSaysHuman = facts.wantsHuman === true;
+  delete facts.wantsHuman;
   const countsBefore = JSON.stringify([s.profile.cameras, s.profile.mobileLines]);
   const keyBefore = JSON.stringify([s.profile.hasGstin, s.profile.gstinStatus, s.profile.employees, s.profile.sites, s.profile.cityTier, s.profile.segment, s.profile.simOnly]);
   const askedNeeds = (facts.needs as Need[] | undefined) ?? [];
@@ -741,7 +750,7 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
       };
     });
   }
-  const wantsHuman = ASK_HUMAN.test(userText);
+  const wantsHuman = ASK_HUMAN.test(userText) || aiSaysHuman;
   const changed = JSON.stringify(s.bundle) !== before;
   for (const n of askedNeeds) {
     const inPlan = REMOVE_PRODUCTS[n]?.some((pid) => s.bundle.some((b) => b.productId === pid));
@@ -767,7 +776,9 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
     : "You are chatting in an app. Be warm and brief: under 70 words. Plain text, no markdown or tables. When presenting a plan, put each product on its own line starting with \"- \" with its short reason, then the monthly price and setup on one line. End with one question.";
   const system = `You are "Udyam Saathi", a warm advisor for small businesses in India.
 Reply in ${s.language} (native script). ${style}
-Use ONLY the facts below. Never invent products, prices, numbers, timelines, calls or offers. Never ask about budget or anything not in "Your next step". Never add or combine amounts: say the monthly price and the one-time setup separately, exactly as written. Never mention discounts.
+Use ONLY the facts below. Never invent products, prices, numbers, timelines, calls or offers.
+A product can only do what its "whatItIs" says — never claim extra features. When talking about one product, use its ownPrice; the monthlyPrice is the total for the whole plan.
+Never promise that someone will call, visit or reply within any time. Never ask about budget or anything not in "Your next step". Never add or combine amounts: say the monthly price and the one-time setup separately, exactly as written. Never mention discounts.
 If the owner interrupted you, drop what you were saying and answer what they just said.
 Services we offer (names only; prices come only from the plan): ${CATALOGUE_OVERVIEW}
 If asked what we offer, describe these in plain words and offer to add any to the plan.
@@ -783,7 +794,11 @@ Your next step: ${next}`;
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.text }));
   // Numbers the reply may contain: only those we computed or the owner told us.
   const allowed = new Set((system + " " + userText).match(/\d[\d,]*/g)?.map((n) => n.replace(/,/g, "")) ?? []);
-  const invented = (t: string) => (t.match(/\d[\d,]*/g) ?? []).map((n) => n.replace(/,/g, "")).filter((n) => n.length >= 2 && !allowed.has(n));
+  const timeClaims = (t: string) => (t.match(/\d+\s*(minutes?|mins?|hours?|hrs?|मिनट|घंटे|ਮਿੰਟ|ਘੰਟੇ)/gi) ?? []).map((m) => m.match(/\d+/)![0]);
+  const invented = (t: string) => [
+    ...(t.match(/\d[\d,]*/g) ?? []).map((n) => n.replace(/,/g, "")).filter((n) => n.length >= 2 && !allowed.has(n)),
+    ...timeClaims(t).filter((n) => !allowed.has(n)),
+  ];
   let text = "";
   const target = channel === "voice" ? VOICE_TARGET : CHAT_TARGET;
   // Question turns: the model may only acknowledge; the exact question is appended by code,
