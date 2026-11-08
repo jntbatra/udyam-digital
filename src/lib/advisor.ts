@@ -126,7 +126,7 @@ export const TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "request_expert",
-      description: "Hand over to a local Accel expert when the case is complex, the owner is confused/frustrated, or asks for a human.",
+      description: "Hand over to a local Udyam Digital expert when the case is complex, the owner is confused/frustrated, or asks for a human.",
       parameters: {
         type: "object",
         properties: {
@@ -140,7 +140,7 @@ export const TOOLS: ToolDef[] = [
 ];
 
 function systemPrompt(s: Session) {
-  return `You are "Udyam Saathi", Accel Business's advisor for small businesses in India.
+  return `You are "Udyam Saathi", Udyam Digital's advisor for small businesses in India.
 Reply in the language the owner is using right now — currently ${s.language}${s.language === "English" ? "" : " (simple everyday words, native script; product names may stay in English)"}. If they switch language, switch with them.
 Goal: understand the business in a few short questions, then recommend a bundle with ONE clear monthly price.
 
@@ -274,12 +274,12 @@ export async function runTool(s: Session, name: string, rawArgs: string): Promis
         option: o.label,
         monthlyPrice: priceBundle(o.items, s.profile, { contractMonths: o.contractMonths ?? s.contractMonths }).monthly,
       }));
-      return { ok: true, cheaperOptions: opts, objectionCount: s.priceObjections, escalate: esc?.reason === "price_objection" ? "Offer to connect a local Accel expert" : undefined };
+      return { ok: true, cheaperOptions: opts, objectionCount: s.priceObjections, escalate: esc?.reason === "price_objection" ? "Offer to connect a local Udyam Digital expert" : undefined };
     }
     case "request_expert": {
       const a = normaliseArgs(rawArgs, ["reason", "note"]) as { reason?: string; note?: string };
       const consent = s.consents.find((c) => c.purpose === "expert_handoff" && c.granted);
-      if (!consent) return { ok: false, needsConsent: true, tellOwner: "Ask: can a local Accel expert call or visit you? They will see only your name, business, area and draft plan. The app will show a consent button." };
+      if (!consent) return { ok: false, needsConsent: true, tellOwner: "Ask: can a local Udyam Digital expert call or visit you? They will see only your name, business, area and draft plan. The app will show a consent button." };
       const lead = escalate(s, (a.reason as never) ?? "asked_human", a.note ?? "");
       return { ok: true, leadId: lead.id, mode: lead.mode, priority: lead.priority };
     }

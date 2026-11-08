@@ -7,7 +7,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Accel Business · Udyam Digital",
+  title: "Udyam Digital",
   description: "Get your business online in one sitting — advisor, one price, instant KYC, live tracker.",
 };
 

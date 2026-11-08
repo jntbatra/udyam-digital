@@ -9,7 +9,7 @@ type Order = { id: string; stage: string; tickets: { id: string; text: string; s
 const PURPOSES = [
   ["kyc", "KYC verification", "Needed to activate your connection"],
   ["voice", "Voice processing", "Lets the voice advisor hear you"],
-  ["expert_handoff", "Share with a Local Accel Expert", "Name, business, area and draft plan only"],
+  ["expert_handoff", "Share with a Local Udyam Digital Expert", "Name, business, area and draft plan only"],
   ["marketing", "Offers on WhatsApp", "Optional"],
 ] as const;
 

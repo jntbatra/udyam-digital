@@ -207,7 +207,7 @@ export default function KycPage() {
               await api("/api/expert", { method: "POST", json: { sessionId: id, reason: "kyc_failed", note: fails.map((f) => f.label).join("; ") } });
               setMsg(null);
               await refresh();
-              setInfo("A Local Accel Expert will call you within 15 minutes to sort out the documents.");
+              setInfo("A Local Udyam Digital Expert will call you within 15 minutes to sort out the documents.");
             }}>Get help from a local expert</Button>
           )}
           {info && <p className="text-sm text-good mt-2">✓ {info}</p>}

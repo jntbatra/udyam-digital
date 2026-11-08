@@ -23,7 +23,7 @@ function authed(req: http.IncomingMessage) {
 }
 
 const LOGIN = (err = "") => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Accel Business · access</title><style>
+<title>Udyam Digital · access</title><style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f4f4f5;color:#1d1d1f}
 body:before{content:"";position:fixed;width:520px;height:520px;top:-160px;right:-120px;border-radius:50%;background:rgba(228,0,0,.10);filter:blur(90px)}
 form{position:relative;background:rgba(255,255,255,.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.75);border-radius:28px;padding:32px;width:min(340px,86vw);box-shadow:0 10px 30px rgba(0,0,0,.05)}
@@ -31,7 +31,7 @@ h1{font-size:20px;margin:0 0 6px;letter-spacing:-.02em}p{color:#6e6e73;font-size
 input{width:100%;box-sizing:border-box;height:44px;border-radius:12px;border:1px solid rgba(0,0,0,.1);padding:0 14px;font-size:16px;letter-spacing:.2em;text-transform:uppercase;background:rgba(255,255,255,.8)}
 button{margin-top:12px;width:100%;height:44px;border:0;border-radius:999px;background:#e40000;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
 .e{color:#e40000;font-size:13px;margin-top:10px}
-</style></head><body><form method="GET" action="/__access"><h1>Accel Business</h1><p>Enter the access code you were given.</p>
+</style></head><body><form method="GET" action="/__access"><h1>Udyam Digital</h1><p>Enter the access code you were given.</p>
 <input name="code" autocomplete="off" autofocus required><button>Continue</button>${err ? `<div class="e">${err}</div>` : ""}</form></body></html>`;
 
 const server = http.createServer((req, res) => {

@@ -19,7 +19,7 @@ P17,Cloud & Productivity,Cloud Backup 1 TB,"Automatic backup of PCs and phones, 
 P18,Cloud & Productivity,Website + Domain Starter,"Domain, 5-page website builder, hosting, SSL",per account,299,499,0,12,1;2,1,1,N,,2,micro;prof
 P19,Cloud & Productivity,Cloud POS & Billing,"GST-ready billing, inventory, UPI/card acceptance on a tablet",per counter,599,899,2500,12,1;2,1,1,N,,3,micro;multi
 P20,Security,Endpoint Security,Antivirus and ransomware protection for PCs and phones,per device,99,149,0,12,1;2,1,1,N,,1,prof;mfg;multi
-P21,Security,Managed Firewall,"Next-gen firewall at the site, managed by Accel SOC",per site,1999,2999,4000,24,1;2,10,1,Y,P01|P02|P03|P05|P06,10,mfg;multi;prof
+P21,Security,Managed Firewall,"Next-gen firewall at the site, managed by Udyam Digital SOC",per site,1999,2999,4000,24,1;2,10,1,Y,P01|P02|P03|P05|P06,10,mfg;multi;prof
 P22,Security,Secure Wi-Fi with Guest Network,Managed Wi-Fi access point with separate customer Wi-Fi and content filtering,per site,399,599,1000,12,1;2,1,1,N,P01|P02|P03|P04,3,micro;multi;prof
 P23,IoT & Physical,Cloud CCTV,HD camera with 30-day cloud recording and mobile app view,per camera,199,299,1800,12,1;2,1,1,N,P01|P02|P03|P04|P05|P06,4,micro;multi;mfg
 P24,IoT & Physical,Machine Monitoring IoT,IoT SIM + sensor kit for machine uptime and energy use,per device,149,249,3000,24,1;2,10,1,Y,,10,mfg

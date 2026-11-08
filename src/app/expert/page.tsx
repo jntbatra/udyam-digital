@@ -64,7 +64,7 @@ export default function ExpertPage() {
     <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold">Local Accel Expert</h1>
+          <h1 className="text-2xl font-semibold">Local Udyam Digital Expert</h1>
           <p className="text-sm text-muted">Leads the AI advisor handed over, your calendar, earnings and performance.</p>
         </div>
         <div className="sm:ml-auto flex flex-col gap-1">
@@ -369,7 +369,7 @@ function Performance({ me, all }: { me: Expert; all: Expert[] }) {
         <Stat label="Rating" value={`★ ${me.rating.toFixed(1)}`} hint="out of 5" />
         <Stat label="Open load" value={me.load} hint={`Rank #${rank} of ${all.length} on activation`} />
       </div>
-      <p className="text-xs text-muted mt-2">{me.kind === "field" ? "Field sales" : "Partner (Local Accel Expert)"} · {me.city}, {me.state} · {me.languages.join(", ")}</p>
+      <p className="text-xs text-muted mt-2">{me.kind === "field" ? "Field sales" : "Partner (Local Udyam Digital Expert)"} · {me.city}, {me.state} · {me.languages.join(", ")}</p>
     </Card>
   );
 }

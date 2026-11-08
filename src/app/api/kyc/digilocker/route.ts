@@ -2,7 +2,7 @@ import { handle, json, requireSession, HttpError } from "@/lib/api";
 import { digilockerFetch } from "@/lib/kyc";
 import { requireKycConsent, finish } from "../_shared";
 
-/** MOCK DigiLocker / Entity Locker pull. Real integration needs Accel to onboard as a DigiLocker requester. */
+/** MOCK DigiLocker / Entity Locker pull. Real integration needs Udyam Digital to onboard as a DigiLocker requester. */
 export const POST = handle(async (req) => {
   const { sessionId, doc } = (await req.json()) as { sessionId: string; doc: "gst_certificate" | "udyam_certificate" | "signatory_id" };
   const s = requireSession(sessionId);

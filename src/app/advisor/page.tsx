@@ -63,7 +63,7 @@ export default function AdvisorPage() {
     if (!agree) return;
     await api("/api/consent", { method: "POST", json: { sessionId: id, purpose: "expert_handoff", granted: true } });
     const lead = await api<{ mode: string }>("/api/expert", { method: "POST", json: { sessionId: id } });
-    setHandoffDone(lead.mode === "visit" ? "A local Accel expert will visit you. They will confirm a time within 15 minutes." : lead.mode === "call" ? "A local Accel expert will call you within 15 minutes." : "We have sent your plan on WhatsApp. An expert will follow up.");
+    setHandoffDone(lead.mode === "visit" ? "A local Udyam Digital expert will visit you. They will confirm a time within 15 minutes." : lead.mode === "call" ? "A local Udyam Digital expert will call you within 15 minutes." : "We have sent your plan on WhatsApp. An expert will follow up.");
     await refresh();
   }
 
@@ -180,7 +180,7 @@ export default function AdvisorPage() {
       {showHandoff && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm grid place-items-center p-4 z-40">
           <Card className="max-w-md !bg-white/90">
-            <h3 className="font-semibold tracking-tight mb-2">Talk to a local Accel expert?</h3>
+            <h3 className="font-semibold tracking-tight mb-2">Talk to a local Udyam Digital expert?</h3>
             <p className="text-sm text-muted mb-5">{t(lang, "handoffAsk")}</p>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => handoff(false)}>Not now</Button>

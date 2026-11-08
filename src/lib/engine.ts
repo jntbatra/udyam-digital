@@ -180,7 +180,7 @@ export function recommend(profileIn: Profile): Recommendation {
   if (needs.has("email")) tryAdd("email", "P16", profile.emailUsers ?? Math.min(emp, 25), "Business email on your own domain + documents + meetings");
   if (needs.has("backup")) tryAdd("backup", "P17", 1, "Automatic backup of PCs and phones (1 TB)");
   if (needs.has("security")) tryAdd("security", "P20", Math.min(emp, 50), "Antivirus + ransomware protection for each device");
-  if (needs.has("firewall")) tryAdd("firewall", "P21", sites, "Next-gen firewall managed by Accel security team");
+  if (needs.has("firewall")) tryAdd("firewall", "P21", sites, "Next-gen firewall managed by Udyam Digital security team");
   if (needs.has("failover"))
     tryAdd("failover", "P09", sites, "Automatic backup internet when the main line is down — UPI and billing keep working",
       "Failover needs a fixed line (fibre/leased); AirFiber already works without cables");

@@ -30,7 +30,7 @@ export function TopBar() {
             <span className="w-7 h-7 rounded-full bg-brand grid place-items-center">
               <span className="w-2.5 h-2.5 rounded-full bg-white" />
             </span>
-            <span className="font-semibold tracking-tight">Accel <span className="text-muted font-normal">Business</span></span>
+            <span className="font-semibold tracking-tight">Udyam Digital</span>
           </Link>
           <nav className="ml-auto flex items-center gap-1 overflow-x-auto">
             {CUSTOMER.map(link)}

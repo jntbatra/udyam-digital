@@ -2,7 +2,7 @@ import { handle, json, requireSession, HttpError } from "@/lib/api";
 import { escalate, detectEscalation } from "@/lib/routing";
 import type { EscalationReason } from "@/lib/store";
 
-/** AI-driven hand-off to a Local Accel Expert. Requires one-tap hand-off consent. */
+/** AI-driven hand-off to a Local Udyam Digital Expert. Requires one-tap hand-off consent. */
 export const POST = handle(async (req) => {
   const b = (await req.json()) as { sessionId: string; reason?: EscalationReason; note?: string };
   const s = requireSession(b.sessionId);
