@@ -10,6 +10,7 @@ export type { Expert, Lead, DiscountRequest };
 /** Shape returned by GET /api/leads (customer fields are already masked server-side unless consented). */
 export type LeadCustomer = {
   name: string;
+  role?: string;
   phone?: string;
   business?: string;
   city?: string;
@@ -17,7 +18,7 @@ export type LeadCustomer = {
   segment?: string;
   employees?: number;
   sites?: number;
-  bundle: LineItem[];
+  bundle: (LineItem & { name?: string })[];
   monthly: number;
   conversation?: string;
 };

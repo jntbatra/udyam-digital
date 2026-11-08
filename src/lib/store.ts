@@ -118,6 +118,13 @@ export type Lead = {
   status: "new" | "assigned" | "contacted" | "won" | "lost";
   slot?: string;
   consentAt?: string;
+  /** Temporary demo lead (no real session). Customer details are embedded. */
+  demo?: {
+    seed: string; datasetId: string; role: string;
+    name: string; phone: string; business: string; city: string; language: string; segment: string;
+    employees: number; sites: number; monthly: number; conversation: string;
+    bundle: { productId: string; qty: number; reason: string; name: string }[];
+  };
 };
 
 export type DiscountRequest = {

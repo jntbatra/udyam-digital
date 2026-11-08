@@ -3,14 +3,21 @@ import { handle, json } from "@/lib/api";
 import { maskName, maskPhone } from "@/lib/ids";
 import { priceBundle } from "@/lib/engine";
 import { data } from "@/lib/data";
+import { seedDemoData } from "@/lib/demo-leads";
 
 /** Leads the AI could not close. Expert view shows only hand-off fields; phone revealed only after consent. */
 export const GET = handle(async (req) => {
+  seedDemoData();
   const expertId = new URL(req.url).searchParams.get("expertId");
   const leads = Object.values(db.raw.leads)
     .filter((l) => !expertId || l.assignedExpertId === expertId || l.offers.some((o) => o.expertId === expertId && o.offeredAt && o.status === "offered"))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .map((l) => {
+      if (l.demo) {
+        const { bundle, seed: _seed, ...c } = l.demo;
+        void _seed;
+        return { ...l, customer: { ...c, name: l.consentAt ? c.name : maskName(c.name), phone: c.phone, bundle } };
+      }
       const s = db.session(l.sessionId);
       const consented = !!l.consentAt;
       const summary = s?.messages.filter((m) => m.role === "user").slice(-4).map((m) => m.text).join(" · ");
