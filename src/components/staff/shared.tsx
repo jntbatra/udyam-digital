@@ -24,7 +24,7 @@ export type LeadCustomer = {
 export type LeadView = Lead & { customer: LeadCustomer | null };
 export type LeadsResponse = { leads: LeadView[]; experts: Expert[] };
 
-export type DiscountView = DiscountRequest & { business?: string; city?: string; monthly: number; monthlyAfter: number };
+export type DiscountView = DiscountRequest & { business?: string; city?: string; bundle?: string; monthly: number; monthlyAfter: number };
 export type DiscountsResponse = { requests: DiscountView[]; spend: { approvedCount: number; monthlyDiscountInr: number } };
 
 export type InsightsResponse = {

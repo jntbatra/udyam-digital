@@ -133,6 +133,8 @@ export type DiscountRequest = {
   decidedAt?: string;
   holdUntil: string;
   managerNote?: string;
+  /** Temporary demo request (no real session behind it). Shown with a "Demo" tag on the manager page. */
+  demo?: { business: string; city: string; monthly: number; bundle: string };
 };
 
 type DB = {

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import type React from "react";
 import { api } from "@/lib/client";
 import { Badge, Button, Card, Section, inr } from "@/components/ui";
 import {
@@ -42,24 +43,210 @@ export default function ManagerPage() {
   }, [refresh]);
 
   const nameOf = (id?: string) => experts.find((e) => e.id === id)?.name ?? id ?? "—";
+  const [tab, setTab] = useState<"overview" | "approvals" | "leads" | "experts" | "insights">("overview");
+  const pending = disc?.requests.filter((r) => r.status === "pending") ?? [];
+  const openLeads = leads.filter((l) => l.status !== "won" && l.status !== "lost").length;
+  const tabs = [
+    { id: "overview", label: "Overview" },
+    { id: "approvals", label: "Discount approvals", count: pending.length },
+    { id: "leads", label: "Leads", count: openLeads },
+    { id: "experts", label: "Experts", count: experts.length },
+    { id: "insights", label: "Insights" },
+  ] as const;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6">
-      <div className="flex flex-col sm:flex-row sm:items-end gap-2 mb-6">
+    <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8">
+      <header className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold">Manager · back-office</h1>
-          <p className="text-sm text-muted">Discount approvals, leads the AI could not close, vendor performance and rule-engine insights.</p>
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-brand">Accel Business · back office</p>
+          <h1 className="text-3xl font-semibold tracking-tight mt-1">Manager console</h1>
+          <p className="text-sm text-muted mt-1">Approve rare discounts, rescue leads the AI could not close, keep experts honest.</p>
         </div>
         <div className="sm:ml-auto"><RefreshNote at={updatedAt} /></div>
-      </div>
+      </header>
       <ErrorNote text={err} />
 
-      <DiscountQueue disc={disc} nameOf={nameOf} onChange={refresh} />
-      <ManagerVisuals experts={experts} leads={leads} ins={ins} />
-      <OperationalOverview disc={disc} leads={leads} ins={ins} />
-      <LeadsTable leads={leads} experts={experts} nameOf={nameOf} onChange={refresh} />
-      <VendorTable experts={experts} leads={leads} />
-      <Insights ins={ins} />
+      <HeroStats disc={disc} leads={leads} ins={ins} />
+
+      <nav className="glass rounded-full p-1 flex gap-1 overflow-x-auto mb-6 w-fit max-w-full" role="tablist">
+        {tabs.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+            className={`shrink-0 h-9 px-4 rounded-full text-sm font-medium transition-colors inline-flex items-center gap-2 ${tab === t.id ? "bg-foreground text-white" : "text-muted hover:text-foreground"}`}>
+            {t.label}
+            {"count" in t && t.count > 0 && <span className={`text-[11px] min-w-5 h-5 px-1.5 rounded-full grid place-items-center ${tab === t.id ? "bg-white/20" : t.id === "approvals" ? "bg-brand text-white" : "bg-black/[0.06]"}`}>{t.count}</span>}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "overview" && <Overview disc={disc} leads={leads} experts={experts} ins={ins} nameOf={nameOf} go={setTab} />}
+      {tab === "approvals" && <DiscountQueue disc={disc} nameOf={nameOf} onChange={refresh} />}
+      {tab === "leads" && <><OperationalOverview disc={disc} leads={leads} ins={ins} /><LeadsTable leads={leads} experts={experts} nameOf={nameOf} onChange={refresh} /></>}
+      {tab === "experts" && <><VendorTable experts={experts} leads={leads} /><div className="mt-2"><PerformanceQuadrant experts={experts} /></div></>}
+      {tab === "insights" && <><ManagerVisuals experts={experts} leads={leads} ins={ins} /><Insights ins={ins} /></>}
+    </div>
+  );
+}
+
+function Panel({ title, action, children, className = "" }: { title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`glass rounded-3xl p-5 flex flex-col min-w-0 ${className}`}>
+      <div className="flex items-center mb-4"><h3 className="text-sm font-semibold">{title}</h3><div className="ml-auto">{action}</div></div>
+      <div className="flex-1 min-h-0">{children}</div>
+    </div>
+  );
+}
+
+function Overview({ disc, leads, experts, ins, nameOf, go }: { disc: DiscountsResponse | null; leads: LeadView[]; experts: Expert[]; ins: InsightsResponse | null; nameOf: (id?: string) => string; go: (t: "approvals" | "leads" | "experts" | "insights") => void }) {
+  const [now, setNow] = useState(0);
+  useEffect(() => { const t = setTimeout(() => setNow(Date.now()), 0); const i = setInterval(() => setNow(Date.now()), 30000); return () => { clearTimeout(t); clearInterval(i); }; }, []);
+  const pending = (disc?.requests.filter((r) => r.status === "pending") ?? []).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const decided = disc?.requests.filter((r) => r.status !== "pending") ?? [];
+  const byCase = (["competitor_match", "multisite_mfg", "high_value"] as const).map((c) => ({ label: CASE_LABEL[c].split(" (")[0], value: (disc?.requests ?? []).filter((r) => r.caseType === c).length }));
+  const top = [...experts].sort((a, b) => b.activationRate - a.activationRate).slice(0, 6);
+  const maxAct = Math.max(...top.map((e) => e.activationRate), 0.01);
+  const reasons = Object.entries(leads.reduce<Record<string, number>>((m, l) => { const k = REASON_LABEL[l.reason] ?? l.reason; m[k] = (m[k] ?? 0) + 1; return m; }, {})).sort(([, a], [, b]) => b - a).map(([label, value]) => ({ label, value }));
+  const RULE_LABEL: Record<string, string> = { city_tier: "Not sold in that city", requires_gstin: "Needed a GSTIN", requires_one_of: "Missing base plan", min_employees: "Business too small", min_sites: "Needs more sites", unknown: "Unknown product" };
+  const rules = ins ? Object.entries(ins.replay.byRule).sort(([, a], [, b]) => b - a).slice(0, 5).map(([k, value]) => ({ label: RULE_LABEL[k] ?? k, value })) : [];
+  const b = ins?.baseline, p = ins?.prototype;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <Panel className="lg:col-span-5" title="Needs your decision" action={<button onClick={() => go("approvals")} className="text-xs text-brand font-medium">Open approvals →</button>}>
+          {pending.length === 0 ? <Empty>Nothing waiting.</Empty> : (
+            <ul className="space-y-2">
+              {pending.map((d) => {
+                const slaMin = now ? Math.ceil((Date.parse(d.createdAt) + 2 * 3600000 - now) / 60000) : 120;
+                return (
+                  <li key={d.id}>
+                    <button onClick={() => go("approvals")} className="w-full text-left rounded-2xl bg-white/60 hover:bg-white px-4 py-3 flex items-center gap-3 transition-colors">
+                      <span className="text-2xl font-semibold w-14 tracking-tight">{d.pct}%</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium truncate">{d.business}{d.demo && <span className="ml-2 align-middle"><DemoTag /></span>}</span>
+                        <span className="block text-xs text-muted truncate">{CASE_LABEL[d.caseType].split(" (")[0]} · {nameOf(d.expertId)}</span>
+                      </span>
+                      <span className="text-right shrink-0">
+                        <span className="block text-sm font-medium">−{inr(d.monthly - d.monthlyAfter)}/mo</span>
+                        <span className={`block text-xs ${slaMin <= 0 ? "text-brand font-semibold" : "text-muted"}`}>{slaMin <= 0 ? "SLA breached" : `${slaMin} min left`}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+
+        <Panel className="lg:col-span-4" title="Lead funnel (live demo)">
+          {!p ? <Empty>Loading…</Empty> : (() => {
+            const stages = [
+              { label: "Advisor sessions", value: p.sessions },
+              { label: "Got a bundle", value: p.withBundle },
+              { label: "KYC verified", value: p.kycVerified },
+              { label: "Orders", value: p.orders },
+              { label: "Live", value: p.live },
+            ];
+            const max = Math.max(stages[0].value, 1);
+            return (
+              <div className="space-y-2.5">
+                {stages.map((st, i) => (
+                  <div key={st.label}>
+                    <div className="flex text-xs mb-1"><span className="text-muted">{st.label}</span><span className="ml-auto font-medium">{st.value}{i > 0 && stages[i - 1].value ? <span className="text-muted font-normal"> · {Math.round((st.value / stages[i - 1].value) * 100)}%</span> : null}</span></div>
+                    <div className="h-3 rounded-full bg-black/[0.05] overflow-hidden"><div className="h-full rounded-full bg-brand" style={{ width: `${Math.max((st.value / max) * 100, st.value ? 3 : 0)}%`, opacity: 1 - i * 0.14 }} /></div>
+                  </div>
+                ))}
+                <p className="text-xs text-muted pt-1">{p.closedByAiOnly} of {p.orders} orders closed by the AI alone · {p.leadsToExperts} sent to experts</p>
+              </div>
+            );
+          })()}
+        </Panel>
+
+        <Panel className="lg:col-span-3" title="Discount mix">
+          <div className="space-y-3">
+            {byCase.map((c) => (
+              <div key={c.label} className="flex items-center gap-3">
+                <span className="text-xs w-28 text-muted">{c.label}</span>
+                <div className="flex-1 h-3 rounded-full bg-black/[0.05] overflow-hidden"><div className="h-full rounded-full bg-foreground" style={{ width: `${(c.value / Math.max(...byCase.map((x) => x.value), 1)) * 100}%` }} /></div>
+                <span className="text-xs font-medium w-4 text-right">{c.value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-5 text-center">
+            <div className="rounded-2xl bg-black/[0.03] p-3"><div className="text-xl font-semibold">{decided.length ? pct(decided.filter((d) => d.status === "approved").length / decided.length) : "—"}</div><div className="text-[11px] text-muted">approval rate</div></div>
+            <div className="rounded-2xl bg-black/[0.03] p-3"><div className="text-xl font-semibold">15%</div><div className="text-[11px] text-muted">hard cap</div></div>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <Panel className="lg:col-span-4" title="Top experts by activation" action={<button onClick={() => go("experts")} className="text-xs text-brand font-medium">All experts →</button>}>
+          <ul className="space-y-2.5">
+            {top.map((e, i) => (
+              <li key={e.id} className="flex items-center gap-3 text-sm">
+                <span className={`size-6 rounded-full grid place-items-center text-[11px] font-semibold ${i === 0 ? "bg-brand text-white" : "bg-black/[0.06]"}`}>{i + 1}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-medium text-xs">{e.name}</span>
+                  <span className="block h-1.5 rounded-full bg-black/[0.05] mt-1 overflow-hidden"><span className="block h-full bg-brand rounded-full" style={{ width: `${(e.activationRate / maxAct) * 100}%` }} /></span></span>
+                <span className="text-xs font-mono w-10 text-right">{pct(e.activationRate)}</span>
+                <span className={`text-xs font-mono w-12 text-right ${e.churn6m >= 0.12 ? "text-brand" : "text-muted"}`}>{pct(e.churn6m)} ch</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+        <Panel className="lg:col-span-4" title="Why leads reach experts" action={<button onClick={() => go("leads")} className="text-xs text-brand font-medium">All leads →</button>}>
+          <BarChart data={reasons} empty="No escalated leads yet. Ask the advisor for a human to create one." />
+        </Panel>
+        <Panel className="lg:col-span-4" title="Rule engine: mistakes blocked (history replay)" action={<button onClick={() => go("insights")} className="text-xs text-brand font-medium">Insights →</button>}>
+          {!ins ? <Empty>Loading…</Empty> : (
+            <>
+              <div className="flex gap-6 mb-4">
+                <div><div className="text-3xl font-semibold tracking-tight">{ins.replay.violations}</div><div className="text-[11px] text-muted">bad line items</div></div>
+                <div><div className="text-3xl font-semibold tracking-tight text-brand">{ins.replay.activatedOnBadGstin}</div><div className="text-[11px] text-muted">sales on bad GSTIN</div></div>
+              </div>
+              <BarChart data={rules} empty="No violations." />
+            </>
+          )}
+        </Panel>
+      </div>
+
+      {b && p && (
+        <div className="glass rounded-3xl p-5 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {[
+            { k: "Baseline activation", v: pct(b.activationRate, 1), s: `${b.leads.toLocaleString("en-IN")} historic leads` },
+            { k: "Avg days to live", v: `${b.avgDays} → ${p.avgDaysToLive != null ? p.avgDaysToLive.toFixed(1) : "—"}`, s: "baseline → prototype" },
+            { k: "Status-chase calls", v: `${b.chaseCalls} → ${p.statusChaseCalls}`, s: "per order, live tracker" },
+            { k: "6-month churn", v: pct(b.churn6m, 1), s: "baseline" },
+            { k: "Blended CAC", v: inr(b.cac), s: "baseline" },
+            { k: "Products / customer", v: p.productsPerCustomer != null ? p.productsPerCustomer.toFixed(1) : "—", s: `${p.orders} demo orders` },
+          ].map((x) => (
+            <div key={x.k}><div className="text-[11px] text-muted">{x.k}</div><div className="text-lg font-semibold mt-0.5">{x.v}</div><div className="text-[11px] text-muted">{x.s}</div></div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeroStats({ disc, leads, ins }: { disc: DiscountsResponse | null; leads: LeadView[]; ins: InsightsResponse | null }) {
+  const [now, setNow] = useState(0);
+  useEffect(() => { const t = setTimeout(() => setNow(Date.now()), 0); const i = setInterval(() => setNow(Date.now()), 30000); return () => { clearTimeout(t); clearInterval(i); }; }, []);
+  const pending = disc?.requests.filter((r) => r.status === "pending") ?? [];
+  const breached = now ? pending.filter((r) => Date.parse(r.createdAt) + 2 * 3600000 <= now).length : 0;
+  const atStake = pending.reduce((sum, r) => sum + (r.monthly - r.monthlyAfter), 0);
+  const items = [
+    { label: "Awaiting your decision", value: String(pending.length), sub: breached ? `${breached} past 2-hour SLA` : "all within SLA", hot: breached > 0 },
+    { label: "Revenue at stake", value: `${inr(atStake)}`, sub: "per month, if all approved" },
+    { label: "Discount given", value: `${inr(disc?.spend.monthlyDiscountInr ?? 0)}`, sub: `per month · ${disc?.spend.approvedCount ?? 0} approved` },
+    { label: "Open expert leads", value: String(leads.filter((l) => l.status !== "won" && l.status !== "lost").length), sub: `${ins?.prototype.live ?? 0} live connections` },
+  ];
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      {items.map((x, i) => (
+        <div key={x.label} className={`rounded-3xl p-5 ${i === 0 ? "bg-brand text-white shadow-[0_10px_30px_rgba(228,0,0,0.25)]" : "glass"}`}>
+          <div className={`text-xs ${i === 0 ? "text-white/80" : "text-muted"}`}>{x.label}</div>
+          <div className="text-3xl font-semibold tracking-tight mt-1">{x.value}</div>
+          <div className={`text-xs mt-1 ${i === 0 ? (x.hot ? "font-semibold" : "text-white/80") : "text-muted"}`}>{x.hot ? "! " : ""}{x.sub}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -244,53 +431,65 @@ function DiscountQueue({ disc, nameOf, onChange }: { disc: DiscountsResponse | n
     return () => { clearTimeout(first); clearInterval(t); };
   }, []);
   const reqs = disc?.requests ?? [];
-  const pending = reqs.filter((r) => r.status === "pending");
+  const pending = reqs.filter((r) => r.status === "pending").sort((a, b) => a.createdAt.localeCompare(b.createdAt)); // oldest (closest to SLA) first
   const decided = reqs.filter((r) => r.status !== "pending");
   const approved = reqs.filter((r) => r.status === "approved");
   const rate = decided.length ? approved.length / decided.length : 0;
   const avgPct = approved.length ? approved.reduce((s, r) => s + r.pct, 0) / approved.length : 0;
 
   return (
-    <Section title="Discount approval queue" right={<Badge tone={pending.length ? "warn" : "neutral"}>{pending.length} pending</Badge>}>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-        <Stat label="Approved discounts" value={disc?.spend.approvedCount ?? 0} />
-        <Stat label="Discount spend" value={`${inr(disc?.spend.monthlyDiscountInr ?? 0)}/mo`} hint="monthly revenue given up" />
-        <Stat label="Approval rate" value={decided.length ? pct(rate) : "—"} hint={`${approved.length} of ${decided.length} decided`} />
-        <Stat label="Avg approved discount" value={approved.length ? `${avgPct.toFixed(1)}%` : "—"} hint={`${reqs.length} requests total`} />
+    <section>
+      <div className="glass rounded-3xl p-4 mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <span className="font-medium">Discount policy</span>
+        <span className="text-muted">Only 3 cases:</span>
+        {Object.values(CASE_LABEL).map((c) => <span key={c} className="px-3 py-1 rounded-full bg-black/[0.04] text-xs">{c}</span>)}
+        <span className="text-muted text-xs sm:ml-auto">Max 15% · decide within 2 h · quote held 48 h</span>
       </div>
-      <p className="text-xs text-muted mb-2">Allowed only for competitor match (with proof), multi-site / manufacturer, or bundles ≥ ₹5,000/month. SLA 2 h; quote held 48 h.</p>
       {pending.length === 0 ? (
         <Empty>No discount requests waiting. Expert requests appear here for approval.</Empty>
       ) : (
-        <div className="grid md:grid-cols-2 gap-3">
+        <div className="grid md:grid-cols-2 gap-4">
           {pending.map((d) => <DiscountCard key={d.id} d={d} now={now} nameOf={nameOf} onChange={onChange} />)}
         </div>
       )}
+
+      <div className="mt-8 flex items-center gap-3 mb-3">
+        <h2 className="font-semibold tracking-tight">Decision history</h2>
+        <span className="text-xs text-muted">{decided.length ? `${pct(rate)} approved · avg ${avgPct.toFixed(1)}% when approved` : "no decisions yet"}</span>
+      </div>
       {decided.length > 0 && (
-        <details className="mt-3">
-          <summary className="text-sm text-muted cursor-pointer">Decided ({decided.length})</summary>
-          <ul className="mt-2 text-sm divide-y divide-border bg-surface border border-border rounded-xl">
-            {decided.map((d) => (
-              <li key={d.id} className="px-3 py-2 flex flex-wrap items-center gap-2">
-                <DiscountStatusBadge s={d.status} />
-                <span className="font-medium">{d.business ?? d.sessionId}</span>
-                <span className="text-muted">{CASE_LABEL[d.caseType]} · {d.pct}% · {inr(d.monthly)} → {inr(d.monthlyAfter)}</span>
-                {d.managerNote && <span className="text-muted italic">“{d.managerNote}”</span>}
-              </li>
-            ))}
-          </ul>
-        </details>
+        <div className="glass rounded-3xl divide-y divide-black/5 overflow-hidden">
+          {decided.map((d) => (
+            <div key={d.id} className="px-5 py-3 flex flex-wrap items-center gap-3 text-sm">
+              <span className={`size-8 rounded-full grid place-items-center text-xs font-semibold ${d.status === "approved" ? "bg-foreground text-white" : "bg-brand-soft text-brand"}`}>{d.status === "approved" ? "✓" : "✕"}</span>
+              <div className="min-w-40">
+                <div className="font-medium flex items-center gap-2">{d.business ?? d.sessionId}{d.demo && <DemoTag />}</div>
+                <div className="text-xs text-muted">{CASE_LABEL[d.caseType]} · by {nameOf(d.expertId)}</div>
+              </div>
+              <div className="text-muted">{d.pct}% · {inr(d.monthly)} → {inr(d.monthlyAfter)}</div>
+              {d.managerNote && <div className="text-xs text-muted italic sm:ml-auto">“{d.managerNote}”</div>}
+            </div>
+          ))}
+        </div>
       )}
-    </Section>
+    </section>
   );
+}
+
+function DemoTag() {
+  return <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/[0.06] text-muted font-semibold" title="Temporary demo request">Demo</span>;
 }
 
 function DiscountCard({ d, now, nameOf, onChange }: { d: DiscountView; now: number; nameOf: (id?: string) => string; onChange: () => void }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const slaMs = new Date(d.createdAt).getTime() + 2 * 3600000 - now;
+  const slaTotal = 2 * 3600000;
+  const slaMs = now ? Date.parse(d.createdAt) + slaTotal - now : slaTotal;
+  const slaUsed = Math.min(Math.max(1 - slaMs / slaTotal, 0), 1);
   const left = timeLeft(d.holdUntil, now);
+  const saving = d.monthly - d.monthlyAfter;
+  const weakProof = d.caseType === "competitor_match" && !/₹|\d{3,}/.test(d.proof);
 
   async function decide(approve: boolean) {
     setBusy(true);
@@ -306,30 +505,56 @@ function DiscountCard({ d, now, nameOf, onChange }: { d: DiscountView; now: numb
   }
 
   return (
-    <Card className="!p-4 text-sm space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">{d.business ?? "Business"}</span>
-        <span className="text-muted">{d.city}</span>
-        <span className="ml-auto"><DiscountStatusBadge s={d.status} /></span>
+    <div className="glass rounded-3xl p-5 flex flex-col gap-4">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold flex items-center gap-2 flex-wrap">{d.business ?? "Business"}{d.demo && <DemoTag />}</div>
+          <div className="text-xs text-muted mt-0.5">{d.city} · requested by {nameOf(d.expertId)}</div>
+        </div>
+        <span className="ml-auto shrink-0 px-2.5 py-1 rounded-full bg-brand-soft text-brand text-xs font-medium">{CASE_LABEL[d.caseType].split(" (")[0]}</span>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Badge tone="brand">{CASE_LABEL[d.caseType]}</Badge>
-        <Badge tone={slaMs > 0 ? "neutral" : "bad"}>{slaMs > 0 ? `⏱ SLA ${Math.ceil(slaMs / 60000)} min left` : "! SLA breached"}</Badge>
-        <Badge tone={left === "expired" ? "bad" : "neutral"}>⌛ Quote hold: {left}</Badge>
+
+      <div className="flex items-end gap-4">
+        <div className="text-5xl font-semibold tracking-tight leading-none">{d.pct}<span className="text-2xl">%</span></div>
+        <div className="text-sm pb-0.5">
+          <div className="text-muted line-through">{inr(d.monthly)}/mo</div>
+          <div className="font-semibold">{inr(d.monthlyAfter)}/mo</div>
+        </div>
+        <div className="ml-auto text-right text-xs text-muted pb-0.5">
+          <div>gives up</div>
+          <div className="text-foreground font-semibold text-sm">{inr(saving)}/mo</div>
+          <div>{inr(saving * 24)} over 24 mo</div>
+        </div>
       </div>
       <div>
-        <span className="text-2xl font-semibold">{d.pct}%</span>{" "}
-        <span className="text-muted">{inr(d.monthly)} → <span className="text-foreground font-medium">{inr(d.monthlyAfter)}</span>/month</span>
+        <div className="flex justify-between text-[11px] text-muted mb-1"><span>vs 15% cap</span><span>{Math.round((d.pct / 15) * 100)}% of cap</span></div>
+        <div className="h-1.5 rounded-full bg-black/[0.06] overflow-hidden"><div className={`h-full rounded-full ${d.pct >= 12 ? "bg-brand" : "bg-foreground"}`} style={{ width: `${(d.pct / 15) * 100}%` }} /></div>
       </div>
-      <div><span className="text-xs text-muted">Proof: </span>{d.proof || <span className="text-muted">none given</span>}</div>
-      <div className="text-xs text-muted">Requested by {nameOf(d.expertId)} · {new Date(d.createdAt).toLocaleString("en-IN")}</div>
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note to expert (optional)" aria-label="Manager note" className="w-full border border-border rounded-lg px-2 py-1.5 bg-surface" />
-      <div className="flex gap-2">
-        <Button size="sm" disabled={busy} onClick={() => decide(true)}>✓ Approve</Button>
-        <Button size="sm" variant="danger" disabled={busy} onClick={() => decide(false)}>✕ Reject</Button>
+
+      {d.bundle && <div className="text-xs text-muted"><span className="text-foreground font-medium">Bundle:</span> {d.bundle}</div>}
+      <div className={`rounded-2xl p-3 text-sm ${weakProof ? "bg-brand-soft/70" : "bg-black/[0.03]"}`}>
+        <div className="text-[11px] uppercase tracking-wider text-muted mb-0.5">Proof {weakProof && <span className="text-brand normal-case tracking-normal font-medium">· no competitor price shown</span>}</div>
+        {d.proof || <span className="text-muted">none given</span>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <div className="flex justify-between mb-1"><span className="text-muted">Decision SLA</span><span className={slaMs <= 0 ? "text-brand font-semibold" : "font-medium"}>{slaMs > 0 ? `${Math.ceil(slaMs / 60000)} min left` : "breached"}</span></div>
+          <div className="h-1.5 rounded-full bg-black/[0.06] overflow-hidden"><div className={`h-full ${slaMs <= 0 ? "bg-brand" : slaUsed > 0.6 ? "bg-brand/70" : "bg-foreground/60"}`} style={{ width: `${slaUsed * 100}%` }} /></div>
+        </div>
+        <div>
+          <div className="flex justify-between mb-1"><span className="text-muted">Quote hold</span><span className="font-medium">{left}</span></div>
+          <div className="h-1.5 rounded-full bg-black/[0.06]" />
+        </div>
+      </div>
+
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note to the expert (optional)" aria-label="Manager note" className="w-full h-10 rounded-2xl border border-black/10 bg-white/70 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30" />
+      <div className="grid grid-cols-2 gap-2">
+        <Button disabled={busy} onClick={() => decide(true)}>✓ Approve {d.pct}%</Button>
+        <Button variant="outline" disabled={busy} onClick={() => decide(false)}>✕ Reject</Button>
       </div>
       <ErrorNote text={err} />
-    </Card>
+    </div>
   );
 }
 
