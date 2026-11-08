@@ -100,11 +100,19 @@ export default function QuotePage() {
         <Card className="lg:sticky lg:top-20">
           <div className="flex gap-2 mb-3">
             {[12, 24].map((m) => (
-              <button key={m} onClick={() => patch({ contractMonths: m })} className={`flex-1 rounded-xl border px-3 py-2 text-sm ${q.contractMonths === m ? "border-brand bg-brand-soft text-brand font-medium" : "border-border"}`}>
+              <button
+                key={m}
+                type="button"
+                disabled={m < q.minContractMonths}
+                title={m < q.minContractMonths ? `This bundle requires at least a ${q.minContractMonths}-month contract` : undefined}
+                onClick={() => patch({ contractMonths: m })}
+                className={`flex-1 rounded-xl border px-3 py-2 text-sm ${q.contractMonths === m ? "border-brand bg-brand-soft text-brand font-medium" : "border-border"} ${m < q.minContractMonths ? "cursor-not-allowed opacity-45" : "hover:border-brand"}`}
+              >
                 {m} months{m === 24 ? " (5% less)" : ""}
               </button>
             ))}
           </div>
+          {q.minContractMonths > 12 && <p className="text-xs text-muted mb-3">12 months isn&apos;t available for this bundle; one or more products require a {q.minContractMonths}-month minimum.</p>}
           <dl className="text-sm space-y-1">
             <div className="flex justify-between"><dt className="text-muted">Products</dt><dd>{inr(q.subtotal)}</dd></div>
             {q.discounts.map((d) => (

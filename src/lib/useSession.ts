@@ -7,7 +7,7 @@ export type PricedLine = {
   unitPrice: number; monthly: number; setup: number; installDays: number; category: string;
 };
 export type QuoteT = {
-  lines: PricedLine[]; contractMonths: number; subtotal: number; discounts: { label: string; amount: number }[];
+  lines: PricedLine[]; minContractMonths: number; contractMonths: number; subtotal: number; discounts: { label: string; amount: number }[];
   approvedDiscountPct: number; monthly: number; setupTotal: number; setupSpread: boolean; monthlyWithSetup: number;
   etaDays: number; floorApplied: boolean; violations: { productId: string; message: string }[];
 };

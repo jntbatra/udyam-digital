@@ -218,6 +218,7 @@ export type PricedLine = LineItem & {
 
 export type Quote = {
   lines: PricedLine[];
+  minContractMonths: number;
   contractMonths: number;
   subtotal: number;
   discounts: { label: string; amount: number }[];
@@ -279,6 +280,7 @@ export function priceBundle(items: LineItem[], profile: Profile, opts: PriceOpti
   const setupSpread = !!opts.setupSpread && setupTotal > 0;
   return {
     lines,
+    minContractMonths: minContract,
     contractMonths,
     subtotal,
     discounts,
