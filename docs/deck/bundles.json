@@ -1,0 +1,58 @@
+[
+ {
+  "name": "Micro · Starter (kirana, tier-2, 3 staff, no GST)",
+  "items": [
+   "Biz Fibre 100",
+   "Business Postpaid 299",
+   "Cloud POS & Billing",
+   "Secure Wi-Fi with Guest Network"
+  ],
+  "monthly": 2296,
+  "setup": 3500,
+  "contract": 12,
+  "eta": 5
+ },
+ {
+  "name": "Professional · Clinic Pro (tier-2, 8 staff, GST)",
+  "items": [
+   "Biz Fibre 100",
+   "Cloud CCTV ×2",
+   "Cloud Email & Office Suite ×8",
+   "Cloud Backup 1 TB",
+   "Endpoint Security ×8"
+  ],
+  "monthly": 3688,
+  "setup": 3600,
+  "contract": 12,
+  "eta": 5
+ },
+ {
+  "name": "Multi-site · Chain Connect (4 stores, tier-1, 24 staff, GST)",
+  "items": [
+   "Biz Fibre 100 ×4",
+   "Business Postpaid 599 ×4",
+   "Cloud POS & Billing ×4",
+   "Cloud CCTV ×8",
+   "Backup 4G/5G Failover ×4",
+   "Secure Wi-Fi with Guest Network ×4"
+  ],
+  "monthly": 15553,
+  "setup": 34400,
+  "contract": 12,
+  "eta": 5
+ },
+ {
+  "name": "Manufacturer · Factory Secure (tier-2, 30 staff, GST)",
+  "items": [
+   "Internet Leased Line 100",
+   "Business Postpaid 599 ×3",
+   "Cloud Email & Office Suite ×10",
+   "Managed Firewall",
+   "Machine Monitoring IoT ×5"
+  ],
+  "monthly": 30791,
+  "setup": 34000,
+  "contract": 24,
+  "eta": 30
+ }
+]
