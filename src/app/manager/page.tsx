@@ -4,7 +4,7 @@ import { api } from "@/lib/client";
 import { Badge, Button, Card, Section, inr } from "@/components/ui";
 import {
   CASE_LABEL, DiscountStatusBadge, Empty, ErrorNote, LeadStatusBadge, ModeBadge, OfferStatusBadge, PriorityBadge, REASON_LABEL, RefreshNote, Stat, pct, timeLeft,
-  BarChart, ComparisonBars, StackedBarChart, type DiscountsResponse, type DiscountView, type Expert, type InsightsResponse, type LeadView, type LeadsResponse,
+  BarChart, StackedBarChart, type DiscountsResponse, type DiscountView, type Expert, type InsightsResponse, type LeadView, type LeadsResponse,
 } from "@/components/staff/shared";
 
 const REFRESH_MS = 5000;
@@ -103,9 +103,8 @@ function ManagerVisuals({ experts, leads, ins }: { experts: Expert[]; leads: Lea
         <ConversionFunnel leads={leads} ins={ins} />
         <EscalationOutcomes leads={leads} />
       </div>
-      <div className="grid lg:grid-cols-2 gap-3 mt-3">
+      <div className="mt-3">
         <PerformanceQuadrant experts={experts} />
-        <BaselineComparison ins={ins} />
       </div>
     </Section>
   );
@@ -165,41 +164,42 @@ function EscalationOutcomes({ leads }: { leads: LeadView[] }) {
 
 function PerformanceQuadrant({ experts }: { experts: Expert[] }) {
   if (!experts.length) return <Card className="!p-4"><h3 className="text-sm font-semibold mb-3">Expert performance quadrant</h3><Empty>No experts loaded.</Empty></Card>;
-  const width = 420, height = 220, pad = 32;
-  const x = (rate: number) => pad + rate * (width - pad * 2);
-  const y = (churn: number) => height - pad - Math.min(churn / 0.25, 1) * (height - pad * 2);
+  const width = 760, height = 360;
+  const pad = { top: 28, right: 24, bottom: 52, left: 58 };
+  const rates = experts.map((e) => e.activationRate);
+  const churns = experts.map((e) => e.churn6m);
+  const minRate = Math.max(0, Math.floor((Math.min(...rates) - 0.02) * 10) / 10);
+  const maxRate = Math.min(1, Math.ceil((Math.max(...rates) + 0.02) * 10) / 10);
+  const maxChurn = Math.max(0.2, Math.ceil((Math.max(...churns) + 0.02) * 20) / 20);
+  const x = (rate: number) => pad.left + ((rate - minRate) / Math.max(maxRate - minRate, 0.01)) * (width - pad.left - pad.right);
+  const y = (churn: number) => height - pad.bottom - (churn / maxChurn) * (height - pad.top - pad.bottom);
+  const avgRate = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+  const avgChurn = churns.reduce((sum, churn) => sum + churn, 0) / churns.length;
+  const xTicks = Array.from({ length: 5 }, (_, i) => minRate + (maxRate - minRate) * (i / 4));
+  const yTicks = Array.from({ length: 4 }, (_, i) => maxChurn * (i / 3));
   return (
     <Card className="!p-4">
       <h3 className="text-sm font-semibold mb-1">Expert performance quadrant</h3>
-      <p className="text-xs text-muted mb-2">Higher activation and lower churn are better. Bubble size reflects open load.</p>
+      <p className="text-xs text-muted mb-2">Best zone is above average activation and below average churn. Bubble size reflects open load.</p>
       <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[360px] h-56" role="img" aria-label="Expert activation rate versus six-month churn">
-          <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="currentColor" opacity=".2" />
-          <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke="currentColor" opacity=".2" />
-          <text x={width / 2} y={height - 5} textAnchor="middle" className="fill-muted text-[10px]">Activation rate →</text>
-          <text x="10" y={height / 2} textAnchor="middle" transform={`rotate(-90 10 ${height / 2})`} className="fill-muted text-[10px]">6-mo churn →</text>
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[620px] h-80" role="img" aria-label="Expert activation rate versus six-month churn">
+          <rect x={x(avgRate)} y={pad.top} width={width - pad.right - x(avgRate)} height={y(avgChurn) - pad.top} className="fill-brand/10" />
+          {yTicks.map((tick) => <g key={`y-${tick}`}><line x1={pad.left} y1={y(tick)} x2={width - pad.right} y2={y(tick)} stroke="currentColor" opacity=".1" /><text x={pad.left - 8} y={y(tick) + 4} textAnchor="end" className="fill-muted text-[10px]">{pct(tick)}</text></g>)}
+          {xTicks.map((tick) => <g key={`x-${tick}`}><line x1={x(tick)} y1={pad.top} x2={x(tick)} y2={height - pad.bottom} stroke="currentColor" opacity=".08" /><text x={x(tick)} y={height - pad.bottom + 18} textAnchor="middle" className="fill-muted text-[10px]">{pct(tick)}</text></g>)}
+          <line x1={x(avgRate)} y1={pad.top} x2={x(avgRate)} y2={height - pad.bottom} stroke="currentColor" strokeDasharray="4 4" opacity=".35" />
+          <line x1={pad.left} y1={y(avgChurn)} x2={width - pad.right} y2={y(avgChurn)} stroke="currentColor" strokeDasharray="4 4" opacity=".35" />
+          <text x={width - pad.right - 4} y={pad.top + 14} textAnchor="end" className="fill-brand text-[11px]">Best zone</text>
+          <text x={width / 2} y={height - 8} textAnchor="middle" className="fill-muted text-[11px]">Activation rate →</text>
+          <text x="13" y={height / 2} textAnchor="middle" transform={`rotate(-90 13 ${height / 2})`} className="fill-muted text-[11px]">6-mo churn →</text>
           {experts.map((e) => {
-            const cx = x(e.activationRate), cy = y(e.churn6m), radius = 4 + Math.min(e.load, 12);
-            return <g key={e.id}><circle cx={cx} cy={cy} r={radius} className="fill-brand/70 stroke-brand" /><text x={cx} y={cy - radius - 3} textAnchor="middle" className="fill-foreground text-[9px]">{e.id}</text><title>{`${e.name}: ${pct(e.activationRate)} activation, ${pct(e.churn6m)} churn, ${e.load} open`}</title></g>;
+            const cx = x(e.activationRate), cy = y(e.churn6m), radius = 6 + Math.min(e.load, 8);
+            return <g key={e.id}><circle cx={cx} cy={cy} r={radius} className="fill-brand/75 stroke-white stroke-2" /><title>{`${e.name} (${e.id}): ${pct(e.activationRate)} activation, ${pct(e.churn6m)} churn, ${e.load} open leads`}</title></g>;
           })}
         </svg>
       </div>
-    </Card>
-  );
-}
-
-function BaselineComparison({ ins }: { ins: InsightsResponse | null }) {
-  if (!ins) return <Card className="!p-4"><h3 className="text-sm font-semibold mb-3">Baseline versus prototype</h3><Empty>Loading comparison…</Empty></Card>;
-  const { baseline: b, prototype: p } = ins;
-  return (
-    <Card className="!p-4">
-      <h3 className="text-sm font-semibold mb-3">Baseline versus prototype</h3>
-      <ComparisonBars data={[
-        { label: "Activation rate", baseline: b.activationRate * 100, prototype: p.sessions ? (p.orders / p.sessions) * 100 : 0, display: (v) => `${v.toFixed(1)}%` },
-        { label: "Days to live", baseline: b.avgDays, prototype: p.avgDaysToLive ?? 0, display: (v) => v.toFixed(1) },
-        { label: "Status-chase calls", baseline: b.chaseCalls, prototype: p.statusChaseCalls },
-      ]} />
-      <p className="text-xs text-muted mt-3">The baseline is historical; prototype values are calculated from current demo sessions and orders.</p>
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1 text-xs text-muted">
+        {experts.map((e) => <div key={e.id} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand" aria-hidden="true" /><span className="font-medium text-foreground">{e.id}</span><span>{pct(e.activationRate)} act. · {pct(e.churn6m)} churn</span></div>)}
+      </div>
     </Card>
   );
 }
