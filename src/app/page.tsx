@@ -66,7 +66,7 @@ export default function Home() {
             <span className="w-12 h-12 rounded-full bg-white/15 grid place-items-center"><Mic width={22} height={22} /></span>
             <span className="flex-1">
               <span className="block font-medium">Talk to an advisor</span>
-              <span className="block text-sm text-white/75">Like a phone call · Hindi or English</span>
+              <span className="block text-sm text-white/75">Like a phone call · any Indian language</span>
             </span>
             <Arrow className="opacity-70 group-hover:translate-x-0.5 transition-transform" />
           </button>

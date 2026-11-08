@@ -172,8 +172,16 @@ export function applyProfile(s: Session, args: Record<string, unknown>) {
   const prev = s.profile;
   const next: Profile = { ...prev, ...Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)) };
   if (p.needs) next.needs = [...new Set([...(prev.needs ?? []), ...p.needs])];
-  if (p.city) {
-    const ci = data.cityInfo(p.city);
+  if (p.city !== undefined) {
+    // reject malformed model output (e.g. "',employees: 8 <!-- ...") — a city is a short plain name
+    const clean = String(p.city).trim();
+    if (!/^[\p{L} .'-]{2,30}$/u.test(clean)) {
+      delete next.city;
+      if (prev.city) next.city = prev.city;
+    } else next.city = clean;
+  }
+  if (p.city && next.city) {
+    const ci = data.cityInfo(next.city);
     if (ci) Object.assign(next, { city: ci.city, cityTier: ci.tier, state: ci.state });
     else next.cityTier = next.cityTier ?? 2;
   }

@@ -188,11 +188,18 @@ async function sarvamSpeak(text: string, languageCode: SarvamAI.TextToSpeechLang
   return pcmFromWav(Buffer.from(response.audios[0], "base64"));
 }
 
-function sarvamTranscript(message: unknown) {
-  const m = message as { event?: string; transcript?: string; text?: string; data?: { transcript?: string; text?: string } };
-  if (!m.event?.toLowerCase().includes("transcript") || m.event.toLowerCase().includes("partial")) return null;
-  return (m.transcript ?? m.text ?? m.data?.transcript ?? m.data?.text ?? "").trim() || null;
+function sarvamTranscript(message: unknown): { text: string; languageCode?: string } | null {
+  // Sarvam realtime sends {"event":"transcript.final","text":"...","language":"hi-IN"} (partials: "transcript.partial")
+  const m = message as { event?: string; type?: string; transcript?: string; text?: string; language?: string; language_code?: string; data?: { transcript?: string; text?: string; language_code?: string } };
+  const kind = (m.event ?? m.type ?? "").toLowerCase();
+  if (!kind.includes("transcript") && !(kind === "data" && m.data?.transcript)) return null;
+  if (kind.includes("partial")) return null;
+  const text = (m.transcript ?? m.text ?? m.data?.transcript ?? m.data?.text ?? "").trim();
+  if (!text) return null;
+  return { text, languageCode: m.language ?? m.language_code ?? m.data?.language_code ?? undefined };
 }
+
+const LANGUAGE_BY_CODE: Record<string, string> = { ...Object.fromEntries(Object.entries(SARVAM_LANGUAGES).map(([name, code]) => [code, name])), "or-IN": "Odia" };
 
 function handleSarvamConnection(ws: WebSocket, sessionId: string) {
   if (!SARVAM_API_KEY) {
@@ -206,12 +213,14 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
     ws.close(4004, "unknown session");
     return;
   }
-  const languageCode = sarvamLanguage(s);
+  // "auto" = Sarvam auto-detects the spoken language on every utterance (set SARVAM_STT_LANGUAGE to pin one).
+  const languageCode = process.env.SARVAM_STT_LANGUAGE || "auto";
   const sttUrl = `wss://api.sarvam.ai/speech-to-text-realtime/ws?model=${encodeURIComponent(SARVAM_STT_MODEL)}&language_code=${encodeURIComponent(languageCode)}`;
   const stt = new WebSocket(sttUrl, { headers: { "api-subscription-key": SARVAM_API_KEY } });
   let started = false;
   let closed = false;
   let pendingAudio: Buffer[] = [];
+  let replyChain: Promise<void> = Promise.resolve();
 
   const close = () => {
     if (closed) return;
@@ -219,9 +228,11 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
     stt.close();
     if (ws.readyState === ws.OPEN) ws.close();
   };
-  const respond = async (text: string) => {
+  const respond = async (text: string, detected?: string) => {
     const session = freshSession(sessionId);
     if (!session) throw new Error("session not found");
+    // Follow the language the owner is speaking (Sarvam's detection; advisorTurn also checks the script).
+    if (detected && LANGUAGE_BY_CODE[detected]) session.language = LANGUAGE_BY_CODE[detected];
     const out = await advisorTurn(session, text.slice(0, 2000), "voice");
     ws.send(JSON.stringify({ type: "transcript", role: "assistant", text: out.text, final: true }));
     ws.send(JSON.stringify({ type: "bundle_updated" }));
@@ -240,8 +251,12 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       const message = JSON.parse(String(raw));
       const transcript = sarvamTranscript(message);
       if (!transcript) return;
-      ws.send(JSON.stringify({ type: "transcript", role: "user", text: transcript, final: true }));
-      void respond(transcript).catch((e: unknown) => ws.send(JSON.stringify({ type: "error", message: (e as Error).message })));
+      ws.send(JSON.stringify({ type: "transcript", role: "user", text: transcript.text, final: true }));
+      ws.send(JSON.stringify({ type: "thinking" }));
+      // one reply at a time, in order
+      replyChain = replyChain
+        .then(() => respond(transcript.text, transcript.languageCode))
+        .catch((e: unknown) => ws.send(JSON.stringify({ type: "error", message: (e as Error).message })));
     } catch (e) {
       ws.send(JSON.stringify({ type: "error", message: (e as Error).message }));
     }
