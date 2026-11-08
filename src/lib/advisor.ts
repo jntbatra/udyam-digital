@@ -595,6 +595,14 @@ const QUESTIONS: Record<AskField, { en: string; hi: string }> = {
   needs: { en: "What do you need most: internet, UPI billing, business SIMs, WhatsApp, CCTV, email or backup?", hi: "आपको सबसे ज़्यादा क्या चाहिए: इंटरनेट, UPI बिलिंग, बिज़नेस सिम, WhatsApp, CCTV, ईमेल या बैकअप?" },
 };
 
+const RE_ASK: Record<AskField, { en: string; hi: string }> = {
+  businessType: { en: "Sorry, I didn't catch that. What does your business do — for example a shop, clinic or office?", hi: "माफ़ कीजिए, समझ नहीं पाया। आपका बिज़नेस क्या है — जैसे दुकान, क्लिनिक या ऑफिस?" },
+  city: { en: "Sorry, I didn't catch the city. Which town or city are you in?", hi: "माफ़ कीजिए, शहर समझ नहीं आया। आप किस शहर में हैं?" },
+  employees: { en: "Sorry, I didn't catch that. Roughly how many people work with you?", hi: "माफ़ कीजिए, समझ नहीं पाया। आपके साथ लगभग कितने लोग काम करते हैं?" },
+  sites: { en: "Sorry, I didn't catch that. Is it one shop, or more than one?", hi: "माफ़ कीजिए, समझ नहीं पाया। आपकी एक ही दुकान है या एक से ज़्यादा?" },
+  hasGstin: { en: "Sorry, I didn't catch that. Is your business GST registered — yes or no?", hi: "माफ़ कीजिए, समझ नहीं पाया। क्या आपका बिज़नेस GST में रजिस्टर्ड है — हाँ या नहीं?" },
+  needs: { en: "Sorry, I didn't catch that. Which would help you most — internet, UPI billing, SIMs, WhatsApp or CCTV?", hi: "माफ़ कीजिए, समझ नहीं पाया। सबसे ज़्यादा किससे मदद मिलेगी — इंटरनेट, UPI बिलिंग, सिम, WhatsApp या CCTV?" },
+};
 const QUESTION_CACHE = new Map<string, string>();
 /** The fixed question in the owner's language (Hindi/English built in; others translated once and cached). */
 async function localizedQuestion(field: AskField, language: string): Promise<string> {
@@ -673,10 +681,8 @@ function answerFor(field: Session["awaiting"], text: string): Record<string, unk
       return Number.isFinite(num) && num > 0 ? { employees: num } : {};
     case "sites":
       return Number.isFinite(num) && num > 0 ? { sites: num } : /^(one|just one|single|ek|एक)\b/i.test(t) ? { sites: 1 } : {};
-    case "city": {
-      const name = t.replace(/^(in|at|from|we are in|it'?s|मैं|हम)\s+/i, "").replace(/\s+(में|mein|se)$/i, "").trim();
-      return /^[\p{L} .'-]{2,30}$/u.test(name) && name.split(/\s+/).length <= 3 ? { city: name.replace(/\b\w/g, (c) => c.toUpperCase()) } : {};
-    }
+    case "city":
+      return {}; // only known cities (extractFacts) or the AI fact reader may set a city — "shop hai" is not a city
     case "businessType":
       return t.length <= 60 && !YES.test(t) && !NO.test(t) ? { businessType: t } : {};
     default:
@@ -760,6 +766,7 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   const missing = missingFor(s.profile);
   const needsAsked = !!s.profile.needs?.length || !!s.profile.simOnly;
   // Our code decides the question; the model only words it.
+  const prevAwaiting = s.awaiting;
   const ask = nextQuestion(s);
   s.awaiting = ask?.field;
   const next =
@@ -818,7 +825,11 @@ Your next step: ${next}`;
       break;
     }
   }
-  if (ackOnly) {
+  const askedAgain = ackOnly && prevAwaiting === ask!.field; // their reply didn't answer it
+  if (askedAgain) {
+    const q = RE_ASK[ask!.field];
+    text = s.language === "Hindi" ? q.hi : s.language === "English" ? q.en : await localizedQuestion(ask!.field, s.language);
+  } else if (ackOnly) {
     // keep at most the first sentence of the acknowledgement and drop any question the model slipped in
     const ack = (text.split(/(?<=[.!।])\s+/)[0] ?? "").replace(/[^.!।]*\?$/, "").trim();
     text = `${ack ? `${ack} ` : ""}${await localizedQuestion(ask!.field, s.language)}`;
