@@ -3,7 +3,7 @@
  * Shared by chat and voice (voice calls the same tool executors).
  */
 import { z } from "zod";
-import { chatCompletion, normaliseArgs, type ChatMessage, type ToolDef } from "./llm";
+import { chatCompletion, normaliseArgs, VOICE_TARGET, type ChatMessage, type ToolDef } from "./llm";
 import {
   recommend, priceBundle, cheaperOptions, upsellSuggestions, validateBundle, NEED_LABELS,
   type Need, type Profile, type Segment,
@@ -148,6 +148,7 @@ Reply in the language the owner is using right now — currently ${s.language}${
 Goal: understand the business in a few short questions, then recommend a bundle with ONE clear monthly price.
 
 Rules:
+- Write plain conversational text: no markdown, no tables, no headings, no bold. For a plan, use one short line per product starting with "- ".
 - Ask at most ONE short question per reply. Keep replies under 60 words (they may be spoken aloud).
 - Collect: business type, city, number of employees, number of sites, GSTIN (yes/no), current internet, and needs (UPI/billing, WhatsApp, CCTV, email, backup, security, customer Wi-Fi...).
 - Always call update_profile when the owner gives facts. Then call recommend_bundle as soon as type, city, employees, sites and GSTIN are known.
@@ -371,11 +372,28 @@ const numBefore = (x: string, words: string) => {
   return /^\d+$/.test(m[1]) ? +m[1] : HI_NUM[m[1].toLowerCase()];
 };
 
+/** Speech-to-text often mishears city names by a letter ("Kachi" for Kochi): accept edit distance 1 on 5+ letter words. */
+function fuzzyCity(x: string): string | undefined {
+  const words = x.toLowerCase().match(/[a-z]{4,}/g) ?? [];
+  const dist = (a: string, b: string) => {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length];
+  };
+  for (const c of data.cities) {
+    const cl = c.toLowerCase();
+    if (cl.length >= 5 && words.some((w) => Math.abs(w.length - cl.length) <= 1 && dist(w, cl) <= 1)) return c;
+  }
+  return undefined;
+}
+
 /** Deterministic fact extraction (English + Hindi keywords). Runs on every message, LLM or not. */
 export function extractFacts(text: string): Record<string, unknown> {
   const x = text.toLowerCase();
   const patch: Record<string, unknown> = {};
-  const city = data.cities.find((c) => x.includes(c.toLowerCase())) ?? (/कोच्चि/.test(x) ? "Kochi" : /दिल्ली/.test(x) ? "Delhi" : /मुंबई/.test(x) ? "Mumbai" : /पुणे/.test(x) ? "Pune" : /लखनऊ/.test(x) ? "Lucknow" : /जयपुर/.test(x) ? "Jaipur" : /कोलकाता/.test(x) ? "Kolkata" : undefined);
+  const city = data.cities.find((c) => x.includes(c.toLowerCase())) ?? fuzzyCity(x) ?? (/कोच्चि/.test(x) ? "Kochi" : /दिल्ली/.test(x) ? "Delhi" : /मुंबई/.test(x) ? "Mumbai" : /पुणे/.test(x) ? "Pune" : /लखनऊ/.test(x) ? "Lucknow" : /जयपुर/.test(x) ? "Jaipur" : /कोलकाता/.test(x) ? "Kolkata" : undefined);
   if (city) patch.city = city;
   const emp = numBefore(x, "लोग|staff|employees?|people|workers?|कर्मचारी|log");
   if (emp) patch.employees = emp;
@@ -455,4 +473,88 @@ export function guidedNext(s: Session): { text: string; options?: string[] } {
   if (!s.profile.needs?.length)
     return { text: hi ? "आपको क्या चाहिए? (कई चुन सकते हैं)" : "What do you need? (pick any)", options: ["UPI / billing", "Business SIMs", "WhatsApp", "CCTV", "Email", "Backup", "Security", "Customer Wi-Fi"] };
   return { text: hi ? "आपका प्लान तैयार है — 'View quote' दबाएँ।" : "Your plan is ready — tap 'View quote'." };
+}
+
+
+// ---------------------------------------------------------------------------
+// Fast voice turn: ONE short LLM call, no tool round-trips.
+// Facts, plan building, plan changes and price objections are handled here
+// deterministically; the model only phrases the reply from computed facts.
+// ---------------------------------------------------------------------------
+const PRICE_OBJECTION = /expensive|costly|too much|cheaper|less price|discount|competitor|महंग|सस्त|ज़्यादा है|ज्यादा है|कम कर|kam kar|mehenga|mahanga|sasta/i;
+const ASK_HUMAN = /human|real person|agent|executive|expert|someone|call me|visit|इंसान|आदमी|किसी से बात|एक्सपर्ट|विज़िट/i;
+
+function planFacts(s: Session) {
+  if (!s.bundle.length) return null;
+  const q = priceBundle(s.bundle, s.profile, { contractMonths: s.contractMonths, setupSpread: s.setupSpread });
+  return {
+    items: q.lines.map((l) => `${l.name}${l.qty > 1 ? ` x${l.qty}` : ""} (${l.reason})`),
+    monthlyPrice: `₹${q.monthlyWithSetup.toLocaleString("en-IN")} per month`,
+    oneTimeSetup: q.setupSpread || !q.setupTotal ? "none" : `₹${q.setupTotal.toLocaleString("en-IN")} one-time`,
+    liveInDays: q.etaDays,
+  };
+}
+
+export async function voiceTurn(s: Session, userText: string) {
+  autoLanguage(s, userText);
+  s.messages.push({ role: "user", text: userText, at: nowIso(), channel: "voice" });
+  const before = JSON.stringify(s.bundle);
+  const prevNeeds = new Set(s.profile.needs ?? []);
+  const facts = extractFacts(userText);
+  if (Object.keys(facts).length) applyProfile(s, facts);
+  const newNeeds = (s.profile.needs ?? []).filter((n) => !prevNeeds.has(n));
+
+  const notes: string[] = [];
+  let cheaper: { option: string; monthlyPrice: string }[] = [];
+  const complete = missingFor(s.profile).length === 0 && (s.profile.needs?.length || s.profile.simOnly);
+  if (complete && (!s.bundle.length || newNeeds.length)) {
+    const r = doRecommend(s); // (re)build the plan from the rules
+    if (r.ok && r.excluded?.length) notes.push(...r.excluded.map((e) => `${e.message}${e.alternative ? ` — alternative: ${e.alternative}` : ""}`));
+  }
+  if (s.bundle.length && PRICE_OBJECTION.test(userText)) {
+    s.priceObjections += 1;
+    cheaper = cheaperOptions(s.bundle, s.profile).slice(0, 2).map((o) => ({
+      option: o.label,
+      monthlyPrice: `₹${priceBundle(o.items, s.profile, { contractMonths: o.contractMonths ?? s.contractMonths }).monthlyWithSetup.toLocaleString("en-IN")} per month`,
+    }));
+  }
+  const wantsHuman = ASK_HUMAN.test(userText);
+  const changed = JSON.stringify(s.bundle) !== before;
+  const missing = missingFor(s.profile);
+  const needsAsked = !!s.profile.needs?.length || !!s.profile.simOnly;
+  const next =
+    missing.length ? `Ask for: ${missing[0]}`
+    : !needsAsked ? "Ask what they need: billing/UPI, business SIMs, WhatsApp, CCTV, email, backup, customer Wi-Fi"
+    : cheaper.length ? "Offer the cheaper options below (never a discount)"
+    : wantsHuman ? "Say a local Accel expert can call or visit; they can tap 'Talk to a human' on screen to agree"
+    : changed ? "Tell them the updated plan and price, then ask if they want to go ahead (tap Review plan)"
+    : s.bundle.length ? "Answer their question using the plan facts, then ask if they want to go ahead"
+    : "Continue the conversation";
+
+  const plan = planFacts(s);
+  const system = `You are "Udyam Saathi", a warm advisor for small businesses on a LIVE VOICE CALL.
+Speak ${s.language} (native script), like a helpful person on the phone. At most 2 short sentences, under 30 words. No lists, no symbols, no markdown. End with one question.
+Use ONLY the facts below. Never invent products or numbers. Never add or combine amounts: say the monthly price and the one-time setup separately, exactly as written. Never mention discounts.
+If the owner interrupted you, drop what you were saying and answer what they just said.
+What we know: ${JSON.stringify({ business: s.profile.businessType, city: s.profile.city, employees: s.profile.employees, sites: s.profile.sites, gstin: s.profile.hasGstin, needs: s.profile.needs })}
+${plan ? `Current plan: ${JSON.stringify(plan)}${changed ? " (just updated)" : ""}` : "No plan yet."}
+${notes.length ? `Not possible: ${notes.join("; ")}` : ""}
+${cheaper.length ? `Cheaper options: ${JSON.stringify(cheaper)}` : ""}
+Your next step: ${next}`;
+
+  const history: ChatMessage[] = s.messages
+    .filter((m) => m.role !== "system")
+    .slice(-8)
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.text }));
+  let text = "";
+  try {
+    const { message } = await chatCompletion({ messages: [{ role: "system", content: system }, ...history], max_tokens: 400 }, VOICE_TARGET);
+    text = (message.content ?? "").replace(/\*\*/g, "").trim();
+  } catch {
+    text = guidedNext(s).text;
+  }
+  if (!text) text = guidedNext(s).text;
+  s.messages.push({ role: "assistant", text, at: nowIso(), channel: "voice" });
+  db.saveSession(s);
+  return { text, changed };
 }

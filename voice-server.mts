@@ -47,7 +47,7 @@ import type { Session } from "./src/lib/store";
 // src/lib reads data/ relative to process.cwd(); make that the app root regardless of where we're launched.
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 process.chdir(APP_ROOT);
-const { TOOLS, runTool, extractFacts, applyProfile, doRecommend, autoLanguage, advisorTurn } = await import("./src/lib/advisor");
+const { TOOLS, runTool, extractFacts, applyProfile, doRecommend, autoLanguage, advisorTurn, voiceTurn } = await import("./src/lib/advisor");
 const { db, nowIso } = await import("./src/lib/store");
 
 const PORT = Number(process.env.VOICE_PORT || 3001);
@@ -262,7 +262,9 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       if (!session) throw new Error("session not found");
       // Follow the language the owner is speaking (Sarvam's detection; advisorTurn also checks the script).
       if (detected && LANGUAGE_BY_CODE[detected]) session.language = LANGUAGE_BY_CODE[detected];
-      const out = await advisorTurn(session, text.slice(0, 2000), "voice");
+      const tLlm = Date.now();
+      const out = await voiceTurn(session, text.slice(0, 2000)); // fast path: one short LLM call
+      console.log(`[timing] advisor ${Date.now() - tLlm}ms`);
       if (gen !== generation) return; // owner spoke again meanwhile — answer that instead
       ws.send(JSON.stringify({ type: "transcript", role: "assistant", text: out.text, final: true }));
       ws.send(JSON.stringify({ type: "bundle_updated" }));
@@ -270,8 +272,11 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       const lang = sarvamTtsLanguage(session);
       // speak sentence by sentence so the first one plays while the rest is synthesised
       let next = sentences(out.text).map((x) => sarvamSpeak(x, lang));
+      const tTts = Date.now();
+      let firstAudio = true;
       for (const pcm of next) {
         const audio = await pcm;
+        if (firstAudio) { console.log(`[timing] first tts ${Date.now() - tTts}ms`); firstAudio = false; }
         if (gen !== generation || ws.readyState !== ws.OPEN) return;
         ws.send(audio);
         const ms = (audio.length / 2 / 24000) * 1000;
@@ -295,6 +300,8 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       const message = JSON.parse(String(raw)) as { event?: string; text?: string };
       // Barge-in: the owner started talking while we speak/think -> stop playback, drop the stale reply.
       // Triggered on real words (partial transcript), not raw VAD, so speaker echo doesn't cut us off.
+      if (message.event === "vad.speech_end") console.log(`[timing] speech_end ${Date.now() % 100000}`);
+      if (message.event === "transcript.final") console.log(`[timing] final ${Date.now() % 100000}`);
       if (message.event === "transcript.partial" && (message.text ?? "").trim().length >= 3 && assistantBusy() && !isEcho(message.text ?? "")) interrupt();
       const transcript = sarvamTranscript(message);
       if (!transcript) return;

@@ -7,10 +7,18 @@ import { Sha256 } from "@aws-crypto/sha256-js";
 import { HttpRequest } from "@smithy/protocol-http";
 import { defaultProvider } from "@aws-sdk/credential-provider-node";
 
-export const LLM_REGION = process.env.MANTLE_REGION || "us-east-1";
-export const LLM_MODEL = process.env.MANTLE_MODEL || "google.gemma-4-31b";
-const HOST = `bedrock-mantle.${LLM_REGION}.api.aws`;
-const PATH = "/openai/v1/chat/completions";
+export const LLM_REGION = process.env.MANTLE_REGION || "ap-south-1";
+export const LLM_MODEL = process.env.MANTLE_MODEL || "openai.gpt-oss-20b";
+const PATH = process.env.MANTLE_PATH || "/v1/chat/completions";
+
+/** Per-use endpoint (voice uses a low-latency model in Mumbai; chat keeps Gemma 4 for tool calling). */
+export type LlmTarget = { region: string; model: string; path: string };
+export const CHAT_TARGET: LlmTarget = { region: LLM_REGION, model: LLM_MODEL, path: PATH };
+export const VOICE_TARGET: LlmTarget = {
+  region: process.env.VOICE_LLM_REGION || "ap-south-1",
+  model: process.env.VOICE_LLM_MODEL || "openai.gpt-oss-20b",
+  path: process.env.VOICE_LLM_PATH || "/v1/chat/completions",
+};
 
 export type ChatMessage =
   | { role: "system" | "user"; content: string }
@@ -24,12 +32,16 @@ export type ToolDef = {
   function: { name: string; description: string; parameters: Record<string, unknown> };
 };
 
-const signer = new SignatureV4({
-  credentials: defaultProvider(),
-  region: LLM_REGION,
-  service: "bedrock-mantle",
-  sha256: Sha256,
-});
+const credentials = defaultProvider();
+const signers = new Map<string, SignatureV4>();
+function signerFor(region: string) {
+  let sg = signers.get(region);
+  if (!sg) {
+    sg = new SignatureV4({ credentials, region, service: "bedrock-mantle", sha256: Sha256 });
+    signers.set(region, sg);
+  }
+  return sg;
+}
 
 export class LlmError extends Error {
   constructor(msg: string, public status?: number) {
@@ -42,8 +54,12 @@ export async function chatCompletion(body: {
   tools?: ToolDef[];
   max_tokens?: number;
   temperature?: number;
-}): Promise<{ message: Extract<ChatMessage, { role: "assistant" }>; finish: string; usage?: unknown }> {
-  const payload = JSON.stringify({ model: LLM_MODEL, max_tokens: 700, temperature: 0.2, ...body });
+}, target: LlmTarget = CHAT_TARGET): Promise<{ message: Extract<ChatMessage, { role: "assistant" }>; finish: string; usage?: unknown }> {
+  // gpt-oss is a reasoning model: keep reasoning short for latency
+  const extra = /gpt-oss/.test(target.model) ? { reasoning_effort: "low" } : {};
+  const payload = JSON.stringify({ model: target.model, max_tokens: 700, temperature: 0.2, ...extra, ...body });
+  const HOST = `bedrock-mantle.${target.region}.api.aws`;
+  const PATH = target.path;
   const req = new HttpRequest({
     method: "POST",
     protocol: "https:",
@@ -52,7 +68,8 @@ export async function chatCompletion(body: {
     headers: { host: HOST, "content-type": "application/json" },
     body: payload,
   });
-  const signed = await signer.sign(req);
+  const signed = await signerFor(target.region).sign(req);
+  const t0 = Date.now();
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 75000);
   try {
@@ -63,6 +80,7 @@ export async function chatCompletion(body: {
       signal: ctrl.signal,
     });
     const txt = await res.text();
+    if (process.env.LLM_TIMING) console.log(`[llm] ${target.model}@${target.region} ${Date.now() - t0}ms tools=${body.tools?.length ?? 0} msgs=${body.messages.length}`);
     if (!res.ok) throw new LlmError(`Mantle ${res.status}: ${txt.slice(0, 300)}`, res.status);
     const j = JSON.parse(txt);
     const ch = j.choices?.[0];
