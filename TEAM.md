@@ -45,3 +45,9 @@ cloudflared tunnel --config /dev/null --no-autoupdate --url http://localhost:808
 Or run the pieces separately: `npm run sync`, `npm run voice`, `npm run gateway`, `npm run dev`.
 The gateway prints the ACCESS CODE (set your own with `ACCESS_CODE=xxxx npm run gateway`).
 Auto-sync never force-overwrites local edits: if the host has uncommitted changes in the same files, it logs a warning and waits — commit and push them.
+
+## Troubleshooting
+
+- Shared link shows a dark Next.js error overlay → someone pushed a runtime error; check the latest commit (`git log -1`) and fix or revert it.
+- Your push isn't live after ~15 s → the host's auto-sync log says why (usually local uncommitted changes on the host in the same file).
+- Voice stuck on "Connecting…" → reload the page; the voice server restarts automatically after pushes to `voice-server.mts` or `src/lib/*`.
