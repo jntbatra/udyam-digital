@@ -236,51 +236,8 @@ for i, (r, m) in enumerate(RK):
     tb(s, 7.05, 1.58 + i * 0.62, 2.6, 0.6, [[(r, {"bold": True, "color": RED})], m], size=8.5)
 footnote(s, "Baselines: smb_leads.csv. Targets and rollout are proposals.")
 
-# ================================================================ 9. TECHNICAL ARCHITECTURE
-s = new_slide("Solution", "Solution architecture: four tiers, one decision core, India-hosted AI",
-    "Technical architecture of the working prototype. Browser clients reach the system through a Cloudflare tunnel and an access-code gateway. Two Node.js services: the Next.js 16 app (UI + API route handlers) and a voice relay over WebSocket. All business decisions live in the decision core (TypeScript). External services: AWS Bedrock Mantle (Kimi K2.5) and Textract in ap-south-1, Sarvam Saaras v3 speech-to-text and Bulbul v3 text-to-speech. The strip at the bottom is one voice turn with measured timings.")
-ZONES = [("CLIENTS", 0.35, 1.55), ("EDGE", 2.02, 1.3), ("APPLICATION · Node.js / TypeScript", 3.44, 3.0), ("AI & DATA SERVICES", 6.56, 3.09)]
-for t, x, w in ZONES:
-    z = box(s, x, 1.22, w, 3.0, fill=SOFT, radius=0.04, name=f"Zone {t}")
-    tb(s, x + 0.08, 1.25, w - 0.1, 0.22, t, size=7.5, bold=True, color=GREY)
-def node(x, y, w, h, title, sub, fill=WHITE, line=LINE, tcol=CHAR, scol=GREY):
-    box(s, x, y, w, h, fill=fill, line=line, radius=0.12)
-    tb(s, x + 0.05, y + 0.03, w - 0.1, h - 0.06, [[(title, {"bold": True, "color": tcol, "size": 8.5})], [(sub, {"color": scol, "size": 7})]], anchor=MSO_ANCHOR.MIDDLE, align=PP_ALIGN.CENTER)
-# clients
-for j, (t, sub) in enumerate([("Owner app", "chat · quote · KYC · tracker"), ("Voice mode", "mic 16 kHz PCM · playback 24 kHz"), ("Expert dashboard", "leads · score · assisted journey"), ("Manager tab", "discount approvals · override")]):
-    node(0.43, 1.5 + j * 0.67, 1.39, 0.58, t, sub)
-# edge
-node(2.1, 1.65, 1.14, 0.8, "Cloudflare Tunnel", "public HTTPS / WSS")
-node(2.1, 2.75, 1.14, 0.95, "Gateway :8080", "access code · HttpOnly cookie · routes /voice")
-arrow(s, 2.67, 2.46, 2.67, 2.74, RED)
-# app
-node(3.52, 1.5, 1.42, 1.05, "Next.js 16 · :3100", "UI + API: /chat /kyc/* /order /leads /discounts /privacy")
-node(5.0, 1.5, 1.36, 1.05, "Voice relay · :3001", "WebSocket · barge-in · echo guard · tool gate")
-core = box(s, 3.52, 2.65, 2.84, 1.5, fill=PINK, line=RED, radius=0.06, name="Decision core")
-tb(s, 3.6, 2.67, 2.7, 0.22, "DECISION CORE", size=7.5, bold=True, color=RED)
-chips = ["Fact reader (LLM, any language)", "Question picker", "Rule & price engine", "Reply guard (no invented ₹)", "KYC checks + GSTIN checksum", "Routing & propensity", "Orders & tracker", "Consent & privacy"]
-for j, c in enumerate(chips):
-    cx = 3.6 + (j % 2) * 1.38; cy = 2.92 + (j // 2) * 0.3
-    box(s, cx, cy, 1.32, 0.25, fill=WHITE, radius=0.5)
-    tb(s, cx, cy, 1.32, 0.25, c, size=6.5, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-# services
-svc = [("AWS Bedrock Mantle", "Kimi K2.5 · ap-south-1 · SigV4", RED), ("AWS Textract", "OCR in memory · ap-south-1", RED), ("Sarvam Saaras v3", "streaming STT · auto language", CHAR), ("Sarvam Bulbul v3", "TTS · 11 languages · pace 1.2", CHAR),
-       ("Registries (mock)", "GSTIN 3,534 · Udyam 2,723 CSV", GREY), ("Catalogue + model", "25 products · propensity.json", GREY), ("Session store", "profiles · consents · orders · leads", GREY), ("DigiLocker / e-sign", "simulated in prototype", GREY)]
-for j, (t, sub, col) in enumerate(svc):
-    x = 6.64 + (j % 2) * 1.5; y = 1.5 + (j // 2) * 0.67
-    node(x, y, 1.43, 0.58, t, sub, line=col if col != GREY else LINE, tcol=col if col == RED else CHAR)
-for x1, y, x2 in [(1.83, 2.05, 2.09), (3.25, 2.05, 3.51), (6.37, 2.0, 6.63), (6.37, 3.4, 6.63)]:
-    arrow(s, x1, y, x2, y, RED)
-# voice turn strip
-box(s, 0.35, 4.3, 9.3, 0.8, fill=WHITE, line=LINE, radius=0.1)
-tb(s, 0.45, 4.33, 2.0, 0.22, "ONE VOICE TURN (measured)", size=7.5, bold=True, color=RED)
-turn = [("Owner speaks", "browser mic"), ("Speech → text", "Sarvam · ~0.2 s"), ("Facts + rules", "reader + engine"), ("Reply", "Kimi K2.5 · 0.3–1 s · guarded"), ("Text → speech", "Sarvam · ~0.5 s"), ("Owner hears", "can interrupt")]
-for j, (t, sub) in enumerate(turn):
-    x = 0.45 + j * 1.53
-    circle_num(s, x, 4.6, j + 1, d=0.24, size=8.5)
-    tb(s, x + 0.27, 4.55, 1.25, 0.52, [[(t, {"bold": True, "size": 8})], [(sub, {"color": GREY, "size": 6.5})]])
-    if j < 5: arrow(s, x + 1.33, 4.72, x + 1.5, 4.72, GREY)
-footnote(s, "Prototype: private repo jntbatra/udyam-digital. Timings measured on the prototype; production target: AWS Mumbai hosting.")
+# ================================================================ 9. TECHNICAL ARCHITECTURE (infographic, v3)
+exec(open("arch_v3.py").read())
 
 # ================================================================ 10. PRIVACY & SECURITY
 s = new_slide("Trust & KYC", "Privacy & security by design: collect less, keep less, show less",
