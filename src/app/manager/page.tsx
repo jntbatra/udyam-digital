@@ -4,7 +4,7 @@ import { api } from "@/lib/client";
 import { Badge, Button, Card, Section, inr } from "@/components/ui";
 import {
   CASE_LABEL, DiscountStatusBadge, Empty, ErrorNote, LeadStatusBadge, ModeBadge, OfferStatusBadge, PriorityBadge, REASON_LABEL, RefreshNote, Stat, pct, timeLeft,
-  type DiscountsResponse, type DiscountView, type Expert, type InsightsResponse, type LeadView, type LeadsResponse,
+  BarChart, type DiscountsResponse, type DiscountView, type Expert, type InsightsResponse, type LeadView, type LeadsResponse,
 } from "@/components/staff/shared";
 
 const REFRESH_MS = 5000;
@@ -55,10 +55,50 @@ export default function ManagerPage() {
       <ErrorNote text={err} />
 
       <DiscountQueue disc={disc} nameOf={nameOf} onChange={refresh} />
+      <ManagerVisuals experts={experts} leads={leads} ins={ins} />
       <LeadsTable leads={leads} experts={experts} nameOf={nameOf} onChange={refresh} />
       <VendorTable experts={experts} leads={leads} />
       <Insights ins={ins} />
     </div>
+  );
+}
+
+function ManagerVisuals({ experts, leads, ins }: { experts: Expert[]; leads: LeadView[]; ins: InsightsResponse | null }) {
+  const vendorData = [...experts]
+    .sort((a, b) => b.activationRate - a.activationRate)
+    .map((e) => ({ label: e.name, value: e.activationRate * 100, display: `${pct(e.activationRate)} act.` }));
+  const reasonData = Object.entries(
+    leads.reduce<Record<string, number>>((counts, lead) => {
+      const label = REASON_LABEL[lead.reason] ?? lead.reason;
+      counts[label] = (counts[label] ?? 0) + 1;
+      return counts;
+    }, {}),
+  )
+    .sort(([, a], [, b]) => b - a)
+    .map(([label, value]) => ({ label, value }));
+  const ruleData = ins
+    ? Object.entries(ins.replay.byRule)
+        .sort(([, a], [, b]) => b - a)
+        .map(([label, value]) => ({ label, value }))
+    : [];
+
+  return (
+    <Section title="Decision visuals">
+      <div className="grid lg:grid-cols-3 gap-3">
+        <Card className="!p-4">
+          <h3 className="text-sm font-semibold mb-3">Expert activation rate</h3>
+          <BarChart data={vendorData} empty="No experts loaded." />
+        </Card>
+        <Card className="!p-4">
+          <h3 className="text-sm font-semibold mb-3">Why leads escalate</h3>
+          <BarChart data={reasonData} empty="No escalated leads yet." />
+        </Card>
+        <Card className="!p-4">
+          <h3 className="text-sm font-semibold mb-3">Rule violations prevented</h3>
+          <BarChart data={ruleData} empty={ins ? "No rule violations found." : "Loading replay data…"} />
+        </Card>
+      </div>
+    </Section>
   );
 }
 

@@ -6,7 +6,7 @@ import { Badge, Button, Card, Section, inr } from "@/components/ui";
 import { DiscountForm } from "@/components/staff/DiscountForm";
 import {
   DiscountStatusBadge, Empty, ErrorNote, LeadStatusBadge, ModeBadge, PriorityBadge, REASON_LABEL, RefreshNote, SEGMENT_NAME, Stat, pct,
-  type DiscountsResponse, type DiscountView, type Expert, type LeadView, type LeadsResponse,
+  BarChart, type DiscountsResponse, type DiscountView, type Expert, type LeadView, type LeadsResponse,
 } from "@/components/staff/shared";
 
 const REFRESH_MS = 5000;
@@ -86,6 +86,7 @@ export default function ExpertPage() {
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         <div>
+          <PipelineVisual leads={leads} />
           <Section title="Leads for you" right={<Badge tone="brand">{leads.length} open</Badge>}>
             {leads.length === 0 ? (
               <Empty>No leads yet — escalations from the advisor appear here.</Empty>
@@ -112,6 +113,33 @@ export default function ExpertPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function PipelineVisual({ leads }: { leads: LeadView[] }) {
+  const statuses = (["new", "assigned", "contacted", "won", "lost"] as const).map((status) => ({
+    label: status[0].toUpperCase() + status.slice(1),
+    value: leads.filter((l) => l.status === status).length,
+  }));
+  const modes = (["call", "visit", "nurture"] as const).map((mode) => ({
+    label: mode === "call" ? "Calls" : mode === "visit" ? "Visits" : "Nurture",
+    value: leads.filter((l) => l.mode === mode).length,
+  }));
+  const won = leads.filter((l) => l.status === "won").length;
+  const active = leads.filter((l) => l.status !== "lost").length;
+  return (
+    <Section title="Pipeline snapshot" right={<span className="text-xs text-muted">{won} won · {active} active</span>}>
+      <div className="grid md:grid-cols-2 gap-3">
+        <Card className="!p-4">
+          <h3 className="text-sm font-semibold mb-3">Lead status</h3>
+          <BarChart data={statuses} />
+        </Card>
+        <Card className="!p-4">
+          <h3 className="text-sm font-semibold mb-3">Recommended engagement</h3>
+          <BarChart data={modes} />
+        </Card>
+      </div>
+    </Section>
   );
 }
 

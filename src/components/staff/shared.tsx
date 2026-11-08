@@ -122,6 +122,26 @@ export function Stat({ label, value, hint, tone }: { label: string; value: React
   );
 }
 
+export type ChartDatum = { label: string; value: number; display?: string };
+
+export function BarChart({ data, empty = "No data yet." }: { data: ChartDatum[]; empty?: string }) {
+  const max = Math.max(...data.map((d) => d.value), 1);
+  if (!data.length) return <Empty>{empty}</Empty>;
+  return (
+    <div className="space-y-3" role="img" aria-label="Bar chart">
+      {data.map((d) => (
+        <div key={d.label} className="grid grid-cols-[minmax(90px,0.8fr)_2fr_auto] items-center gap-2 text-sm">
+          <span className="truncate" title={d.label}>{d.label}</span>
+          <div className="h-2.5 rounded-full bg-black/[0.06] overflow-hidden" aria-hidden="true">
+            <div className="h-full rounded-full bg-brand transition-[width]" style={{ width: `${Math.max((d.value / max) * 100, d.value > 0 ? 4 : 0)}%` }} />
+          </div>
+          <span className="font-mono text-xs text-muted text-right min-w-10">{d.display ?? d.value.toLocaleString("en-IN")}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="border border-dashed border-border rounded-2xl p-6 text-center text-sm text-muted bg-surface">{children}</div>;
 }
