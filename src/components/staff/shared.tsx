@@ -142,6 +142,55 @@ export function BarChart({ data, empty = "No data yet." }: { data: ChartDatum[];
   );
 }
 
+export function StackedBarChart({ data, series, empty = "No data yet." }: {
+  data: { label: string; values: number[] }[];
+  series: { label: string; className: string }[];
+  empty?: string;
+}) {
+  if (!data.length) return <Empty>{empty}</Empty>;
+  return (
+    <div className="space-y-3" role="img" aria-label="Stacked bar chart">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+        {series.map((s) => <span key={s.label} className="inline-flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${s.className}`} aria-hidden="true" />{s.label}</span>)}
+      </div>
+      {data.map((d) => {
+        const total = d.values.reduce((sum, value) => sum + value, 0);
+        return (
+          <div key={d.label} className="grid grid-cols-[minmax(90px,0.8fr)_2fr_auto] items-center gap-2 text-sm">
+            <span className="truncate" title={d.label}>{d.label}</span>
+            <div className="h-3 rounded-full bg-black/[0.06] overflow-hidden flex" aria-hidden="true">
+              {d.values.map((value, i) => <div key={`${d.label}-${series[i]?.label ?? i}`} className={series[i]?.className ?? "bg-brand"} style={{ width: total ? `${(value / total) * 100}%` : "0%" }} />)}
+            </div>
+            <span className="font-mono text-xs text-muted text-right min-w-10">{total.toLocaleString("en-IN")}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ComparisonBars({ data, empty = "No data yet." }: { data: { label: string; baseline: number; prototype: number; display?: (value: number) => string }[]; empty?: string }) {
+  if (!data.length) return <Empty>{empty}</Empty>;
+  const max = Math.max(...data.flatMap((d) => [d.baseline, d.prototype]), 1);
+  return (
+    <div className="space-y-4" role="img" aria-label="Baseline versus prototype comparison">
+      <div className="flex gap-4 text-xs text-muted">
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-black/30" aria-hidden="true" />Baseline</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-brand" aria-hidden="true" />Prototype</span>
+      </div>
+      {data.map((d) => (
+        <div key={d.label}>
+          <div className="flex justify-between text-sm mb-1"><span>{d.label}</span><span className="font-mono text-xs text-muted">{d.display?.(d.baseline) ?? d.baseline} → {d.display?.(d.prototype) ?? d.prototype}</span></div>
+          <div className="space-y-1">
+            <div className="h-2 rounded-full bg-black/[0.06] overflow-hidden"><div className="h-full rounded-full bg-black/30" style={{ width: `${(d.baseline / max) * 100}%` }} /></div>
+            <div className="h-2 rounded-full bg-black/[0.06] overflow-hidden"><div className="h-full rounded-full bg-brand" style={{ width: `${(d.prototype / max) * 100}%` }} /></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="border border-dashed border-border rounded-2xl p-6 text-center text-sm text-muted bg-surface">{children}</div>;
 }

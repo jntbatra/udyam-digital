@@ -4,7 +4,7 @@ import { api } from "@/lib/client";
 import { Badge, Button, Card, Section, inr } from "@/components/ui";
 import {
   CASE_LABEL, DiscountStatusBadge, Empty, ErrorNote, LeadStatusBadge, ModeBadge, OfferStatusBadge, PriorityBadge, REASON_LABEL, RefreshNote, Stat, pct, timeLeft,
-  BarChart, type DiscountsResponse, type DiscountView, type Expert, type InsightsResponse, type LeadView, type LeadsResponse,
+  BarChart, ComparisonBars, StackedBarChart, type DiscountsResponse, type DiscountView, type Expert, type InsightsResponse, type LeadView, type LeadsResponse,
 } from "@/components/staff/shared";
 
 const REFRESH_MS = 5000;
@@ -56,6 +56,7 @@ export default function ManagerPage() {
 
       <DiscountQueue disc={disc} nameOf={nameOf} onChange={refresh} />
       <ManagerVisuals experts={experts} leads={leads} ins={ins} />
+      <OperationalOverview disc={disc} leads={leads} ins={ins} />
       <LeadsTable leads={leads} experts={experts} nameOf={nameOf} onChange={refresh} />
       <VendorTable experts={experts} leads={leads} />
       <Insights ins={ins} />
@@ -97,6 +98,136 @@ function ManagerVisuals({ experts, leads, ins }: { experts: Expert[]; leads: Lea
           <h3 className="text-sm font-semibold mb-3">Rule violations prevented</h3>
           <BarChart data={ruleData} empty={ins ? "No rule violations found." : "Loading replay data…"} />
         </Card>
+      </div>
+      <div className="grid lg:grid-cols-2 gap-3 mt-3">
+        <ConversionFunnel leads={leads} ins={ins} />
+        <EscalationOutcomes leads={leads} />
+      </div>
+      <div className="grid lg:grid-cols-2 gap-3 mt-3">
+        <PerformanceQuadrant experts={experts} />
+        <BaselineComparison ins={ins} />
+      </div>
+    </Section>
+  );
+}
+
+function ConversionFunnel({ leads, ins }: { leads: LeadView[]; ins: InsightsResponse | null }) {
+  if (!ins) return <Card className="!p-4"><h3 className="text-sm font-semibold mb-3">Lead conversion funnel</h3><Empty>Loading funnel…</Empty></Card>;
+  const stages = [
+    { label: "Advisor sessions", value: ins.prototype.sessions },
+    { label: "With bundle", value: ins.prototype.withBundle },
+    { label: "Escalated to experts", value: ins.prototype.leadsToExperts },
+    { label: "Assigned / contacted", value: leads.filter((l) => ["assigned", "contacted", "won"].includes(l.status)).length },
+    { label: "Won", value: leads.filter((l) => l.status === "won").length },
+    { label: "Live connection", value: ins.prototype.live },
+  ];
+  const max = Math.max(stages[0].value, 1);
+  return (
+    <Card className="!p-4">
+      <h3 className="text-sm font-semibold mb-3">Lead conversion funnel</h3>
+      <div className="space-y-2">
+        {stages.map((stage) => (
+          <div key={stage.label} className="flex items-center gap-2 text-sm">
+            <span className="w-32 truncate" title={stage.label}>{stage.label}</span>
+            <div className="flex-1 h-5 rounded bg-black/[0.05] overflow-hidden"><div className="h-full bg-brand rounded-r" style={{ width: `${Math.max((stage.value / max) * 100, stage.value ? 3 : 0)}%` }} /></div>
+            <span className="font-mono text-xs w-8 text-right">{stage.value}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted mt-3">Live connections include orders at live or first-bill stages.</p>
+    </Card>
+  );
+}
+
+function EscalationOutcomes({ leads }: { leads: LeadView[] }) {
+  const reasons = [...new Set(leads.map((l) => l.reason))];
+  const data = reasons.map((reason) => ({
+    label: REASON_LABEL[reason] ?? reason,
+    values: (["new", "assigned", "contacted", "won", "lost"] as const).map((status) => leads.filter((l) => l.reason === reason && l.status === status).length),
+  })).sort((a, b) => b.values.reduce((x, y) => x + y, 0) - a.values.reduce((x, y) => x + y, 0));
+  return (
+    <Card className="!p-4">
+      <h3 className="text-sm font-semibold mb-3">Escalation reason versus outcome</h3>
+      <StackedBarChart
+        data={data}
+        series={[
+          { label: "New", className: "bg-slate-400" },
+          { label: "Assigned", className: "bg-slate-500" },
+          { label: "Contacted", className: "bg-amber-500" },
+          { label: "Won", className: "bg-brand" },
+          { label: "Lost", className: "bg-black/30" },
+        ]}
+        empty="No escalated leads yet."
+      />
+    </Card>
+  );
+}
+
+function PerformanceQuadrant({ experts }: { experts: Expert[] }) {
+  if (!experts.length) return <Card className="!p-4"><h3 className="text-sm font-semibold mb-3">Expert performance quadrant</h3><Empty>No experts loaded.</Empty></Card>;
+  const width = 420, height = 220, pad = 32;
+  const x = (rate: number) => pad + rate * (width - pad * 2);
+  const y = (churn: number) => height - pad - Math.min(churn / 0.25, 1) * (height - pad * 2);
+  return (
+    <Card className="!p-4">
+      <h3 className="text-sm font-semibold mb-1">Expert performance quadrant</h3>
+      <p className="text-xs text-muted mb-2">Higher activation and lower churn are better. Bubble size reflects open load.</p>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[360px] h-56" role="img" aria-label="Expert activation rate versus six-month churn">
+          <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="currentColor" opacity=".2" />
+          <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke="currentColor" opacity=".2" />
+          <text x={width / 2} y={height - 5} textAnchor="middle" className="fill-muted text-[10px]">Activation rate →</text>
+          <text x="10" y={height / 2} textAnchor="middle" transform={`rotate(-90 10 ${height / 2})`} className="fill-muted text-[10px]">6-mo churn →</text>
+          {experts.map((e) => {
+            const cx = x(e.activationRate), cy = y(e.churn6m), radius = 4 + Math.min(e.load, 12);
+            return <g key={e.id}><circle cx={cx} cy={cy} r={radius} className="fill-brand/70 stroke-brand" /><text x={cx} y={cy - radius - 3} textAnchor="middle" className="fill-foreground text-[9px]">{e.id}</text><title>{`${e.name}: ${pct(e.activationRate)} activation, ${pct(e.churn6m)} churn, ${e.load} open`}</title></g>;
+          })}
+        </svg>
+      </div>
+    </Card>
+  );
+}
+
+function BaselineComparison({ ins }: { ins: InsightsResponse | null }) {
+  if (!ins) return <Card className="!p-4"><h3 className="text-sm font-semibold mb-3">Baseline versus prototype</h3><Empty>Loading comparison…</Empty></Card>;
+  const { baseline: b, prototype: p } = ins;
+  return (
+    <Card className="!p-4">
+      <h3 className="text-sm font-semibold mb-3">Baseline versus prototype</h3>
+      <ComparisonBars data={[
+        { label: "Activation rate", baseline: b.activationRate * 100, prototype: p.sessions ? (p.orders / p.sessions) * 100 : 0, display: (v) => `${v.toFixed(1)}%` },
+        { label: "Days to live", baseline: b.avgDays, prototype: p.avgDaysToLive ?? 0, display: (v) => v.toFixed(1) },
+        { label: "Status-chase calls", baseline: b.chaseCalls, prototype: p.statusChaseCalls },
+      ]} />
+      <p className="text-xs text-muted mt-3">The baseline is historical; prototype values are calculated from current demo sessions and orders.</p>
+    </Card>
+  );
+}
+
+function OperationalOverview({ disc, leads, ins }: { disc: DiscountsResponse | null; leads: LeadView[]; ins: InsightsResponse | null }) {
+  const pendingDiscounts = disc?.requests.filter((r) => r.status === "pending") ?? [];
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 30000);
+    return () => { clearTimeout(first); clearInterval(timer); };
+  }, []);
+  const slaBreached = pendingDiscounts.filter((r) => new Date(r.createdAt).getTime() + 2 * 3600000 <= now).length;
+  const awaitingResponse = leads.filter((l) => l.status === "new" || (l.status === "assigned" && !l.assignedExpertId)).length;
+  const unassigned = leads.filter((l) => !l.assignedExpertId && l.mode !== "nurture").length;
+  const health = [
+    { label: "Pending discounts", value: pendingDiscounts.length, hint: "awaiting manager decision" },
+    { label: "SLA-breached discounts", value: slaBreached, hint: "past 2-hour SLA" },
+    { label: "Unassigned action leads", value: unassigned, hint: "call or visit required" },
+    { label: "Leads awaiting response", value: awaitingResponse, hint: "new or assigned" },
+    { label: "Live connections", value: ins?.prototype.live ?? 0, hint: "live or first bill" },
+    { label: "Rule violations prevented", value: ins?.replay.violations ?? 0, hint: "historical replay" },
+  ];
+  return (
+    <Section title="Live operational health">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+        {health.map((item) => <Stat key={item.label} label={item.label} value={item.value.toLocaleString("en-IN")} hint={item.hint} tone={item.value > 0 && (item.label.includes("SLA") || item.label.includes("awaiting") || item.label.includes("Unassigned")) ? "warn" : undefined} />)}
       </div>
     </Section>
   );
