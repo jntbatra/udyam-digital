@@ -237,8 +237,9 @@ for t, x in nodes:
     b = box(s, x, 3.2, 1.0 if x > 4 else 1.22, 0.75, fill=WHITE, line=LINE, radius=0.12)
     tb(s, x, 3.22, 1.0 if x > 4 else 1.22, 0.72, t, size=8.5, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 for x1, x2 in [(1.72, 1.93), (3.17, 3.38), (4.62, 4.83)]: arrow(s, x1, 3.57, x2, 3.57, GREY)
-tb(s, 0.5, 4.05, 5.35, 0.95, ["Facts read from any language (incl. “thirty”, “लुधियाना”, corrections); the next question is chosen by code.",
-    "Guard: replies with any price or time not computed by the engine are rejected and rewritten.", "Proof: replaying all 368 real activations, the engine blocks 53 rule-breaking line items + 22 activations on cancelled/suspended GSTIN."], size=8.5)
+tb(s, 0.5, 4.05, 5.35, 0.95, [[("Understands any language: ", {"bold": True}), ("gets answers like “thirty” or “लुधियाना” and picks up corrections. Our app decides the next question, not the AI.", {})],
+    [("No made-up prices: ", {"bold": True}), ("if the AI says a price or time we didn't calculate, the reply is thrown away and rewritten.", {})],
+    [("Proof: ", {"bold": True}), ("we checked all 368 past sales with our rules — they would have stopped 53 wrong products and 22 sales to businesses with cancelled GST.", {})]], size=8.5)
 insight(s, 6.15, 2.75, 3.5, 1.7, f"{pct(A['mismatch']['share'], 0)} of activated customers bought a bundle different from what they asked for. Our advisor recommends from stated needs only — e.g. SIMs only if asked, 100 Mbps for ≤9 people per site, upsell max 2 optional add-ons.", label="WHY IT MATTERS")
 footnote(s, "Stack: Next.js · Bedrock Mantle (Kimi K2.5, Mumbai) · Sarvam STT/TTS · AWS Textract. Replay on smb_leads.csv.")
 
