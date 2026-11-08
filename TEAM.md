@@ -1,12 +1,12 @@
 # Team workflow
 
-The app is hosted on Jayant's PC and shared through a Cloudflare tunnel (link + access code shared privately).
+The app is live at https://accel.jayantb.dev (AWS Mumbai, behind a Cloudflare Tunnel; the server pulls `main` every minute).
 That PC **auto-pulls from GitHub every ~10 seconds**, so whatever you push to `main` is live on the shared link almost immediately.
 
 ## One-time setup (each teammate)
 
 ```bash
-gh repo clone jntbatra/udyam-digital      # private repo — ask Jayant to add you as a collaborator
+gh repo clone jntbatra/udyam-digital      # public repo; ask Jayant for push access. Never commit keys: .env.local is git-ignored and GitHub push protection blocks secrets
 cd udyam-digital
 npm install
 cp .env.example .env.local                # defaults are fine
