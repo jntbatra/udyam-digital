@@ -51,6 +51,8 @@ export type Session = {
   quoteId?: string;
   orderId?: string;
   escalation?: { reason: EscalationReason; note: string; at: string; leadId: string };
+  /** Which question the advisor asked last, so a short reply ("Yes", "8", "Patiala") is read as its answer. */
+  awaiting?: "businessType" | "city" | "employees" | "sites" | "hasGstin" | "needs";
   createdAt: string;
   updatedAt: string;
   marketingOptIn?: boolean;

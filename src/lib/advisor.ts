@@ -426,7 +426,9 @@ export function extractFacts(text: string): Record<string, unknown> {
     [/wi-?fi|guest|वाई-?फाई/, "wifi_guest"], [/\bsms\b|एसएमएस/, "sms"], [/website|domain|वेबसाइट/, "website"],
     [/failover|backup internet|बैकअप इंटरनेट/, "failover"], [/sim\b|सिम|mobile lines?/, "mobile"],
   ];
-  const needs = needMap.filter(([re]) => re.test(x)).map(([, n]) => n);
+  let needs = needMap.filter(([re]) => re.test(x)).map(([, n]) => n);
+  if (/\b(everything|all (the )?services|all of (it|them)|add all|sab kuch|sabhi)\b|सब कुछ|सभी सेवाएं|सब चाहिए/.test(x))
+    needs = [...new Set([...needs, "upi_pos", "mobile", "whatsapp", "cctv", "email", "backup", "wifi_guest", "website"] as Need[])];
   if (needs.length) patch.needs = needs;
   if (/hotspot|हॉटस्पॉट/.test(x)) patch.currentInternet = "Mobile hotspot";
   else if (/home broadband|होम ब्रॉडबैंड/.test(x)) patch.currentInternet = "Home broadband";
@@ -506,6 +508,59 @@ function planFacts(s: Session) {
   };
 }
 
+type AskField = NonNullable<Session["awaiting"]>;
+const QUESTIONS: Record<AskField, { en: string; hi: string }> = {
+  businessType: { en: "What kind of business do you run?", hi: "आपका किस तरह का बिज़नेस है?" },
+  city: { en: "Which city is your business in?", hi: "आपका बिज़नेस किस शहर में है?" },
+  employees: { en: "How many people work there in total?", hi: "कुल कितने लोग काम करते हैं?" },
+  sites: { en: "How many shops or locations do you have?", hi: "आपकी कितनी दुकानें या ब्रांच हैं?" },
+  hasGstin: { en: "Do you have a GST number?", hi: "क्या आपके पास GST नंबर है?" },
+  needs: { en: "What do you need most: internet, UPI billing, business SIMs, WhatsApp, CCTV, email or backup?", hi: "आपको सबसे ज़्यादा क्या चाहिए: इंटरनेट, UPI बिलिंग, बिज़नेस सिम, WhatsApp, CCTV, ईमेल या बैकअप?" },
+};
+
+/** Next missing fact, in a fixed order. */
+function nextQuestion(s: Session): { field: AskField; question: string; fallback: (lang: string) => string } | null {
+  const p = s.profile;
+  const order: [AskField, boolean][] = [
+    ["businessType", !p.businessType && !p.segment],
+    ["city", !p.city],
+    ["employees", p.employees === undefined],
+    ["sites", p.sites === undefined],
+    ["hasGstin", p.hasGstin === undefined],
+    ["needs", !p.needs?.length && !p.simOnly],
+  ];
+  const f = order.find(([, missing]) => missing)?.[0];
+  if (!f) return null;
+  return { field: f, question: QUESTIONS[f].en, fallback: (lang) => (lang === "Hindi" ? QUESTIONS[f].hi : QUESTIONS[f].en) };
+}
+
+const YES = /^(yes|yeah|yep|haan|han|ha|ji|ji haan|hai|of course|sure|हाँ|हां|जी|है)\b/i;
+const NO = /^(no|nope|nahi|nahin|na|not yet|नहीं|ना|नही)\b/i;
+const WORD_NUM: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20, एक: 1, दो: 2, तीन: 3, चार: 4, पांच: 5, पाँच: 5, छह: 6, सात: 7, आठ: 8, नौ: 9, दस: 10 };
+
+/** Read a short reply as the answer to the question we asked last. */
+function answerFor(field: Session["awaiting"], text: string): Record<string, unknown> {
+  const t = text.trim().replace(/[.!?।]+$/, "");
+  if (!field || !t) return {};
+  const num = Number(t.match(/\d+/)?.[0] ?? WORD_NUM[t.toLowerCase().split(/\s+/).find((w) => WORD_NUM[w]) ?? ""] ?? NaN);
+  switch (field) {
+    case "hasGstin":
+      return YES.test(t) ? { hasGstin: true } : NO.test(t) ? { hasGstin: false } : {};
+    case "employees":
+      return Number.isFinite(num) && num > 0 ? { employees: num } : {};
+    case "sites":
+      return Number.isFinite(num) && num > 0 ? { sites: num } : /^(one|just one|single|ek|एक)\b/i.test(t) ? { sites: 1 } : {};
+    case "city": {
+      const name = t.replace(/^(in|at|from|we are in|it'?s|मैं|हम)\s+/i, "").replace(/\s+(में|mein|se)$/i, "").trim();
+      return /^[\p{L} .'-]{2,30}$/u.test(name) && name.split(/\s+/).length <= 3 ? { city: name.replace(/\b\w/g, (c) => c.toUpperCase()) } : {};
+    }
+    case "businessType":
+      return t.length <= 60 && !YES.test(t) && !NO.test(t) ? { businessType: t } : {};
+    default:
+      return {};
+  }
+}
+
 export async function voiceTurn(s: Session, userText: string) {
   return fastTurn(s, userText, "voice");
 }
@@ -531,7 +586,7 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   const gstinNote = gstinFromText(s, userText);
   const before = JSON.stringify(s.bundle);
   const prevNeeds = new Set(s.profile.needs ?? []);
-  const facts = extractFacts(userText);
+  const facts = { ...answerFor(s.awaiting, userText), ...extractFacts(userText) };
   if (Object.keys(facts).length) applyProfile(s, facts);
   const newNeeds = (s.profile.needs ?? []).filter((n) => !prevNeeds.has(n));
 
@@ -557,14 +612,16 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   const changed = JSON.stringify(s.bundle) !== before;
   const missing = missingFor(s.profile);
   const needsAsked = !!s.profile.needs?.length || !!s.profile.simOnly;
+  // Our code decides the question; the model only words it.
+  const ask = nextQuestion(s);
+  s.awaiting = ask?.field;
   const next =
-    missing.length ? `Ask for: ${missing[0]}`
-    : !needsAsked ? "Ask what they need: billing/UPI, business SIMs, WhatsApp, CCTV, email, backup, customer Wi-Fi"
-    : cheaper.length ? "Offer the cheaper options below (never a discount)"
+    cheaper.length ? "Offer the cheaper options below (never a discount), then ask which they prefer"
     : wantsHuman ? "Say a local Accel expert can call or visit; they can tap 'Talk to a human' on screen to agree"
-    : changed ? "Tell them the updated plan and price, then ask if they want to go ahead (tap Review plan)"
-    : s.bundle.length ? "Answer their question using the plan facts, then ask if they want to go ahead"
-    : "Continue the conversation";
+    : ask ? `Briefly acknowledge what they said, then ask exactly this one question (in their language): "${ask.question}". Do not ask anything else.`
+    : changed ? "Tell them the updated plan (products with short reasons) and the monthly price and setup, then ask if they want to go ahead by tapping Review plan"
+    : s.bundle.length ? "Answer their question using only the plan facts, then ask if they want to go ahead (tap Review plan)"
+    : "Ask how you can help with internet, SIMs, WhatsApp, CCTV or billing for their business";
 
   const plan = planFacts(s);
   const style = channel === "voice"
@@ -572,7 +629,7 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
     : "You are chatting in an app. Be warm and brief: under 70 words. Plain text, no markdown or tables. When presenting a plan, put each product on its own line starting with \"- \" with its short reason, then the monthly price and setup on one line. End with one question.";
   const system = `You are "Udyam Saathi", a warm advisor for small businesses in India.
 Reply in ${s.language} (native script). ${style}
-Use ONLY the facts below. Never invent products or numbers. Never add or combine amounts: say the monthly price and the one-time setup separately, exactly as written. Never mention discounts.
+Use ONLY the facts below. Never invent products, prices, numbers, timelines, calls or offers. Never ask about budget or anything not in "Your next step". Never add or combine amounts: say the monthly price and the one-time setup separately, exactly as written. Never mention discounts.
 If the owner interrupted you, drop what you were saying and answer what they just said.
 What we know: ${JSON.stringify({ business: s.profile.businessType, city: s.profile.city, employees: s.profile.employees, sites: s.profile.sites, gstin: s.profile.hasGstin, needs: s.profile.needs })}
 ${plan ? `Current plan: ${JSON.stringify(plan)}${changed ? " (just updated)" : ""}` : "No plan yet."}
@@ -584,14 +641,23 @@ Your next step: ${next}`;
     .filter((m) => m.role !== "system")
     .slice(-8)
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.text }));
+  // Numbers the reply may contain: only those we computed or the owner told us.
+  const allowed = new Set((system + " " + userText).match(/\d[\d,]*/g)?.map((n) => n.replace(/,/g, "")) ?? []);
+  const invented = (t: string) => (t.match(/\d[\d,]*/g) ?? []).map((n) => n.replace(/,/g, "")).filter((n) => n.length >= 2 && !allowed.has(n));
   let text = "";
-  try {
-    const { message } = await chatCompletion({ messages: [{ role: "system", content: system }, ...history], max_tokens: channel === "voice" ? 400 : 700 }, channel === "voice" ? VOICE_TARGET : CHAT_TARGET);
-    text = (message.content ?? "").replace(/\*\*/g, "").trim();
-  } catch {
-    text = guidedNext(s).text;
+  const target = channel === "voice" ? VOICE_TARGET : CHAT_TARGET;
+  for (let attempt = 0; attempt < 2 && !text; attempt++) {
+    try {
+      const extra: ChatMessage[] = attempt ? [{ role: "system", content: "Your previous draft contained numbers that are not in the facts. Rewrite using only numbers that appear in the facts." }] : [];
+      const { message } = await chatCompletion({ messages: [{ role: "system", content: system }, ...history, ...extra], max_tokens: channel === "voice" ? 400 : 700 }, target);
+      const draft = (message.content ?? "").replace(/\*\*/g, "").trim();
+      if (draft && invented(draft).length === 0) text = draft;
+      else console.warn("[advisor] rejected draft with invented numbers:", invented(draft).join(","));
+    } catch {
+      break;
+    }
   }
-  if (!text) text = guidedNext(s).text;
+  if (!text) text = ask ? ask.fallback(s.language) : guidedNext(s).text;
   s.messages.push({ role: "assistant", text, at: nowIso(), channel });
   db.saveSession(s);
   return { text, changed, wantsHuman };
