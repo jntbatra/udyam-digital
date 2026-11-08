@@ -217,7 +217,15 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
   // "auto" = Sarvam auto-detects the spoken language on every utterance (set SARVAM_STT_LANGUAGE to pin one).
   const languageCode = process.env.SARVAM_STT_LANGUAGE || "auto";
   const sttUrl = `wss://api.sarvam.ai/speech-to-text-realtime/ws?model=${encodeURIComponent(SARVAM_STT_MODEL)}&language_code=${encodeURIComponent(languageCode)}`;
+  const vtag = `[sarvam ${sessionId}]`;
+  console.log(`${vtag} browser connected`);
   const stt = new WebSocket(sttUrl, { headers: { "api-subscription-key": SARVAM_API_KEY } });
+  let micBytes = 0;
+  let micPeak = 0;
+  const micLog = setInterval(() => {
+    if (micBytes) console.log(`${vtag} mic audio so far: ${(micBytes / 32000).toFixed(1)}s, loudest sample in last 5s: ${micPeak} / 32767${micPeak < 300 ? "  <-- SILENT (muted mic / wrong input device?)" : ""}`);
+    micPeak = 0;
+  }, 5000);
   let started = false;
   let closed = false;
   let pendingAudio: Buffer[] = [];
@@ -293,6 +301,7 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
   };
 
   stt.on("open", () => {
+    console.log(`${vtag} sarvam STT open`);
     started = true;
     ws.send(JSON.stringify({ type: "hello", provider: "sarvam", language: languageCode }));
     ws.send(JSON.stringify({ type: "ready", sampleRate: 24000, maxSeconds: MAX_SECONDS }));
@@ -309,6 +318,7 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       if (message.event === "transcript.partial" && (message.text ?? "").trim().length >= 3 && assistantBusy() && !isEcho(message.text ?? "")) interrupt();
       const transcript = sarvamTranscript(message);
       if (!transcript) return;
+      console.log(`${vtag} heard (${transcript.languageCode}): ${transcript.text.slice(0, 80)}`);
       if (assistantBusy() && isEcho(transcript.text)) return; // our own voice through the speakers
       ws.send(JSON.stringify({ type: "transcript", role: "user", text: transcript.text, final: true }));
       ws.send(JSON.stringify({ type: "thinking" }));
@@ -320,7 +330,7 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       ws.send(JSON.stringify({ type: "error", message: (e as Error).message }));
     }
   });
-  stt.on("error", (e) => ws.send(JSON.stringify({ type: "error", message: `Sarvam STT error: ${e.message}` })));
+  stt.on("error", (e) => { console.log(`${vtag} STT error: ${e.message}`); ws.send(JSON.stringify({ type: "error", message: `Sarvam STT error: ${e.message}` })); });
   stt.on("close", () => { if (!closed && started) ws.send(JSON.stringify({ type: "ended", reason: "stt_closed", seconds: 0 })); });
 
   ws.on("message", (raw, isBinary) => {
@@ -330,11 +340,14 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
       return;
     }
     const audio = Buffer.from(raw as Buffer);
+    micBytes += audio.length;
+    for (let i = 0; i + 1 < audio.length; i += 2) micPeak = Math.max(micPeak, Math.abs(audio.readInt16LE(i)));
     if (started && stt.readyState === stt.OPEN) stt.send(JSON.stringify({ event: "audio_input", audio: audio.toString("base64") }));
     else pendingAudio.push(audio);
   });
-  ws.on("close", close);
+  ws.on("close", () => { clearInterval(micLog); console.log(`${vtag} browser closed (mic ${(micBytes / 32000).toFixed(1)}s)`); close(); });
   ws.on("error", close);
+  stt.on("close", (c, r) => console.log(`${vtag} sarvam STT closed ${c} ${String(r).slice(0, 120)}`));
 }
 
 /** OpenAI-style function tools -> Sonic toolSpec (inputSchema.json is a stringified JSON schema, as in the AWS samples). */

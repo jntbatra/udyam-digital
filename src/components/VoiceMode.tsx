@@ -84,6 +84,8 @@ export function VoiceMode({ sessionId, language, onUpdate }: { sessionId: string
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [live, setLive] = useState("");
   const [note, setNote] = useState("");
+  const [micName, setMicName] = useState("");
+  const [level, setLevel] = useState(0); // 0..1 live input level
 
   const wsRef = useRef<WebSocket | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -189,13 +191,46 @@ export function VoiceMode({ sessionId, language, onUpdate }: { sessionId: string
       return;
     }
     streamRef.current = stream;
+    const track = stream.getAudioTracks()[0];
+    setMicName(track?.label || "default microphone");
+    if (track?.muted) setNote(hi ? "माइक म्यूट है — सिस्टम/हेडसेट में अनम्यूट करें।" : "Your microphone is muted — unmute it in your system or headset.");
     const ctx = new AudioContext();
     ctxRef.current = ctx;
     await ctx.resume().catch(() => {});
 
+    // live level + silence detection (all-zero input = muted mic or wrong input device)
+    let silentSince = 0;
+    let warned = false;
+    let lastLevelAt = 0;
     const sendPcm = (b: ArrayBuffer) => {
       const w = wsRef.current;
       if (w && w.readyState === WebSocket.OPEN && activeRef.current && startRef.current) w.send(b);
+      const pcm = new Int16Array(b);
+      let peak = 0;
+      for (let i = 0; i < pcm.length; i++) peak = Math.max(peak, Math.abs(pcm[i]));
+      const now = Date.now();
+      if (now - lastLevelAt > 120) {
+        lastLevelAt = now;
+        setLevel(Math.min(1, peak / 12000));
+      }
+      if (!startRef.current) return;
+      if (peak === 0) {
+        silentSince = silentSince || now;
+        if (!warned && now - silentSince > 3000) {
+          warned = true;
+          setNote(
+            hi
+              ? "आपका माइक बिल्कुल खामोशी भेज रहा है। देखें कि माइक म्यूट न हो, या एड्रेस बार में माइक आइकन से सही माइक चुनें।"
+              : "Your microphone is sending silence. Check it isn't muted, or pick the right mic from the mic icon in the address bar.",
+          );
+        }
+      } else {
+        silentSince = 0;
+        if (warned) {
+          warned = false;
+          setNote("");
+        }
+      }
     };
 
     // Mic capture: AudioWorklet, ScriptProcessor fallback.
@@ -354,7 +389,15 @@ export function VoiceMode({ sessionId, language, onUpdate }: { sessionId: string
       </div>
 
       {active && <Button variant="outline" size="sm" onClick={stop}>{T.end}</Button>}
-      {note && <p className="text-sm text-warn" role="status">{note}</p>}
+      {active && (
+        <div className="flex items-center gap-2 text-xs text-muted" aria-label="Microphone level">
+          <span className="truncate max-w-56">{micName}</span>
+          <span className="w-24 h-1.5 rounded-full bg-black/10 overflow-hidden">
+            <span className="block h-full bg-brand transition-[width] duration-100" style={{ width: `${Math.round(level * 100)}%` }} />
+          </span>
+        </div>
+      )}
+      {note && <p className="text-sm text-brand max-w-md" role="status">{note}</p>}
       {!consented && <p className="text-xs text-muted max-w-sm">{T.consent}. {hi ? "माइक दबाकर आप सहमति देते हैं।" : "Tapping the mic means you agree."}</p>}
       {bubbles.length > 0 && (
         <button className="text-xs text-muted underline" onClick={() => setShowLog((v) => !v)}>{showLog ? "Hide transcript" : "Show transcript"}</button>
