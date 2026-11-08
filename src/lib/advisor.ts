@@ -518,6 +518,28 @@ const QUESTIONS: Record<AskField, { en: string; hi: string }> = {
   needs: { en: "What do you need most: internet, UPI billing, business SIMs, WhatsApp, CCTV, email or backup?", hi: "आपको सबसे ज़्यादा क्या चाहिए: इंटरनेट, UPI बिलिंग, बिज़नेस सिम, WhatsApp, CCTV, ईमेल या बैकअप?" },
 };
 
+const QUESTION_CACHE = new Map<string, string>();
+/** The fixed question in the owner's language (Hindi/English built in; others translated once and cached). */
+async function localizedQuestion(field: AskField, language: string): Promise<string> {
+  if (language === "English") return QUESTIONS[field].en;
+  if (language === "Hindi") return QUESTIONS[field].hi;
+  const key = `${field}:${language}`;
+  const hit = QUESTION_CACHE.get(key);
+  if (hit) return hit;
+  try {
+    const { message } = await chatCompletion(
+      { messages: [{ role: "system", content: `Translate into natural, simple spoken ${language} (native script). Keep product names like WhatsApp, CCTV, UPI, GST in English. Output only the translation.` }, { role: "user", content: QUESTIONS[field].en }], max_tokens: 120 },
+      VOICE_TARGET,
+    );
+    const q = (message.content ?? "").trim();
+    if (q) {
+      QUESTION_CACHE.set(key, q);
+      return q;
+    }
+  } catch { /* fall back to English */ }
+  return QUESTIONS[field].en;
+}
+
 /** Next missing fact, in a fixed order. */
 function nextQuestion(s: Session): { field: AskField; question: string; fallback: (lang: string) => string } | null {
   const p = s.profile;
@@ -536,13 +558,37 @@ function nextQuestion(s: Session): { field: AskField; question: string; fallback
 
 const YES = /^(yes|yeah|yep|haan|han|ha|ji|ji haan|hai|of course|sure|हाँ|हां|जी|है)\b/i;
 const NO = /^(no|nope|nahi|nahin|na|not yet|नहीं|ना|नही)\b/i;
-const WORD_NUM: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20, एक: 1, दो: 2, तीन: 3, चार: 4, पांच: 5, पाँच: 5, छह: 6, सात: 7, आठ: 8, नौ: 9, दस: 10 };
+const EN_UNITS: Record<string, number> = { zero: 0, one: 1, a: 1, an: 1, single: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+const EN_TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fourty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const HI_NUMS: Record<string, number> = {
+  एक: 1, दो: 2, तीन: 3, चार: 4, पांच: 5, पाँच: 5, छह: 6, छः: 6, सात: 7, आठ: 8, नौ: 9, दस: 10, ग्यारह: 11, बारह: 12, तेरह: 13, चौदह: 14, पंद्रह: 15, सोलह: 16,
+  सत्रह: 17, अठारह: 18, उन्नीस: 19, बीस: 20, पच्चीस: 25, तीस: 30, पैंतीस: 35, चालीस: 40, पैंतालीस: 45, पचास: 50, साठ: 60, सत्तर: 70, अस्सी: 80, नब्बे: 90, सौ: 100,
+  ek: 1, do: 2, teen: 3, char: 4, paanch: 5, panch: 5, chhe: 6, saat: 7, aath: 8, nau: 9, das: 10, bees: 20, pachees: 25, tees: 30, chalees: 40, pachaas: 50, sau: 100,
+};
+/** "thirty", "twenty five", "a hundred and ten", "तीस", "30" -> number */
+export function parseCount(text: string): number | undefined {
+  const t = text.toLowerCase().replace(/[-,]/g, " ");
+  const digits = t.match(/\d+/);
+  if (digits) return Number(digits[0]);
+  let total = 0, cur = 0, seen = false;
+  for (const w of t.split(/\s+/)) {
+    if (w in EN_UNITS) { cur += EN_UNITS[w]; seen = true; }
+    else if (w in EN_TENS) { cur += EN_TENS[w]; seen = true; }
+    else if (w === "hundred") { cur = (cur || 1) * 100; seen = true; }
+    else if (w === "thousand") { total += (cur || 1) * 1000; cur = 0; seen = true; }
+    else if (w in HI_NUMS) { cur += HI_NUMS[w]; seen = true; }
+  }
+  return seen && total + cur > 0 ? total + cur : undefined;
+}
 
 /** Read a short reply as the answer to the question we asked last. */
+/** "What do you mean?", "didn't understand", "repeat" — in any of our languages: not an answer. */
+const CONFUSED = /\b(what|meaning|pardon|sorry|repeat|again|didn'?t (get|understand)|don'?t understand|matlab|samajh nahi)\b|मतलब|समझ नहीं|फिर से|क्या\?|ਮਤਲਬ|ਸਮਝ ਨਹੀਂ|ਡਿੰਟ ਅੰਡਰਸਟੈਂਡ|ਕੀ\?|अर्थ|புரியவில்லை|అర్థం కాలేదు|ಅರ್ಥವಾಗಲಿಲ್ಲ|മനസ്സിലായില്ല|বুঝতে পারিনি|સમજાયું નહીં/i;
+
 function answerFor(field: Session["awaiting"], text: string): Record<string, unknown> {
   const t = text.trim().replace(/[.!?।]+$/, "");
-  if (!field || !t) return {};
-  const num = Number(t.match(/\d+/)?.[0] ?? WORD_NUM[t.toLowerCase().split(/\s+/).find((w) => WORD_NUM[w]) ?? ""] ?? NaN);
+  if (!field || !t || CONFUSED.test(text)) return {};
+  const num = parseCount(t) ?? NaN;
   switch (field) {
     case "hasGstin":
       return YES.test(t) ? { hasGstin: true } : NO.test(t) ? { hasGstin: false } : {};
@@ -618,7 +664,7 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   const next =
     cheaper.length ? "Offer the cheaper options below (never a discount), then ask which they prefer"
     : wantsHuman ? "Say a local Accel expert can call or visit; they can tap 'Talk to a human' on screen to agree"
-    : ask ? `Briefly acknowledge what they said, then ask exactly this one question (in their language): "${ask.question}". Do not ask anything else.`
+    : ask ? "ACK_ONLY"
     : changed ? "Tell them the updated plan (products with short reasons) and the monthly price and setup, then ask if they want to go ahead by tapping Review plan"
     : s.bundle.length ? "Answer their question using only the plan facts, then ask if they want to go ahead (tap Review plan)"
     : "Ask how you can help with internet, SIMs, WhatsApp, CCTV or billing for their business";
@@ -646,10 +692,16 @@ Your next step: ${next}`;
   const invented = (t: string) => (t.match(/\d[\d,]*/g) ?? []).map((n) => n.replace(/,/g, "")).filter((n) => n.length >= 2 && !allowed.has(n));
   let text = "";
   const target = channel === "voice" ? VOICE_TARGET : CHAT_TARGET;
+  // Question turns: the model may only acknowledge; the exact question is appended by code,
+  // so the conversation can never drift to "what do you need help with?".
+  const ackOnly = !!ask && next === "ACK_ONLY";
+  const sys = ackOnly
+    ? system.replace("Your next step: ACK_ONLY", "Your next step: write ONLY a short, warm acknowledgement of what they just said (max 8 words). Do NOT ask any question. If you did not understand their answer, say so briefly (e.g. 'Sorry, I didn't catch that.').")
+    : system;
   for (let attempt = 0; attempt < 2 && !text; attempt++) {
     try {
       const extra: ChatMessage[] = attempt ? [{ role: "system", content: "Your previous draft contained numbers that are not in the facts. Rewrite using only numbers that appear in the facts." }] : [];
-      const { message } = await chatCompletion({ messages: [{ role: "system", content: system }, ...history, ...extra], max_tokens: channel === "voice" ? 400 : 700 }, target);
+      const { message } = await chatCompletion({ messages: [{ role: "system", content: sys }, ...history, ...extra], max_tokens: ackOnly ? 150 : channel === "voice" ? 400 : 700 }, target);
       const draft = (message.content ?? "").replace(/\*\*/g, "").trim();
       if (draft && invented(draft).length === 0) text = draft;
       else console.warn("[advisor] rejected draft with invented numbers:", invented(draft).join(","));
@@ -657,7 +709,11 @@ Your next step: ${next}`;
       break;
     }
   }
-  if (!text) text = ask ? ask.fallback(s.language) : guidedNext(s).text;
+  if (ackOnly) {
+    // keep at most the first sentence of the acknowledgement and drop any question the model slipped in
+    const ack = (text.split(/(?<=[.!।])\s+/)[0] ?? "").replace(/[^.!।]*\?$/, "").trim();
+    text = `${ack ? `${ack} ` : ""}${await localizedQuestion(ask!.field, s.language)}`;
+  } else if (!text) text = ask ? ask.fallback(s.language) : guidedNext(s).text;
   s.messages.push({ role: "assistant", text, at: nowIso(), channel });
   db.saveSession(s);
   return { text, changed, wantsHuman };
