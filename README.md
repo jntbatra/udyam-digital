@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Udyam Digital — Accel Business SMB onboarding prototype
 
-## Getting Started
+YTL Hackathon 2026 · Enterprise Track A. All data is synthetic; Accel Telecom is fictional.
 
-First, run the development server:
+A small-business owner goes from "tell me about your business" to an activated, tracked order in one sitting:
+
+1. **Advisor** (`/advisor`) — chat in 11 Indian languages + English (Gemma 4 31B on Bedrock), or in-browser **voice mode** in Hindi/English (Amazon Nova 2.5 Sonic). The LLM only talks; a deterministic **rule + price engine** (`src/lib/engine.ts`) decides every product, eligibility rule and price from `product_catalogue.csv`.
+2. **Quote** (`/quote`) — one monthly price, add-on toggles, 12/24-month choice, setup-fee spreading, need-based add-ons (max 2, off by default), "cheaper options" for price objections. Every edit is re-validated by the engine.
+3. **Smart KYC** (`/kyc`) — consent screen first → GSTIN format/checksum + mock registry lookup → mock DigiLocker/Entity Locker → upload only what's missing (AWS Textract OCR in memory) → cross-checks (status, names, state, address PIN, 90-day bill, signatory) → simulated e-sign.
+4. **Tracker** (`/track`) — 8 stages, ETA = longest install time, WhatsApp-style updates, auto-escalation when late, reschedule.
+5. **Owner account** (`/account`) — plan, post-activation add-ons, support tickets, **privacy center** (consents, download, delete).
+6. **Local Accel Expert** (`/expert`) and **Manager** (`/manager`) — AI-routed leads with propensity score + reasons, offer-to-top-3 assignment, manager override, manager-only discount approval, payouts (70% on connection / 30% at 6 months).
+
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local      # optional; defaults work
+npm run dev                     # Next.js on http://localhost:3100
+npm run voice                   # voice relay on ws://localhost:3001 (separate terminal)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+AWS credentials are read from the default chain. Paid services used: Bedrock Mantle (Gemma 4), Textract, Nova Sonic. Set `ADVISOR_MODE=guided` for a zero-cost offline advisor.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Checks (no AWS calls)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run typecheck
+npm run check:engine   # replays 368 real activations through the rule engine + edge scenarios
+npm run check:kyc      # runs Smart KYC on all 12 specimen applicants (cached OCR)
+```
 
-## Learn More
+`check:engine` reproduces the data finding: **53 rule-breaking line items** and **22 activations on Cancelled/Suspended GSTINs** that the engine would have blocked.
 
-To learn more about Next.js, take a look at the following resources:
+`check:kyc` blocks 5 of 12 specimen applicants: K01 (GSTIN cancelled + blank Udyam number), K05 (no Udyam certificate), K06 (GSTIN fails checksum — altered digits), K07 (legal name on certificate edited), K11 (bill older than 90 days). This is our own answer key, not the judges'.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Layout
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Path | What |
+|---|---|
+| `src/lib/engine.ts` | eligibility, dependencies, recommendation, pricing, cheaper options, upsell |
+| `src/lib/advisor.ts` | LLM tools + deterministic fact extraction + guided fallback |
+| `src/lib/kyc.ts` | Textract parsing (watermark removal, deskew, OCR repair), checks, DigiLocker mock |
+| `src/lib/routing.ts` | propensity score, call/visit/nurture, expert ranking & assignment |
+| `src/lib/orders.ts` | order state machine + tracker |
+| `src/lib/store.ts` | JSON-file store shared by Next.js and the voice server |
+| `voice-server.mts` | Nova Sonic bidirectional-stream relay (WebSocket) |
+| `scripts/` | engine replay, KYC self-check, OCR re-extract, propensity training |
+| `data/` | provided CSVs, `propensity.json`, `ocr-cache.json` (specimen OCR cache) |

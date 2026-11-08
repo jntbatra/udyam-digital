@@ -1,0 +1,62 @@
+{
+ "K01": {
+  "verified": false,
+  "issues": [
+   "FAIL GST registration status: Registry shows GSTIN as Cancelled — the certificate alone is not enough",
+   "FAIL Udyam registration number: Udyam certificate has no readable registration number"
+  ]
+ },
+ "K02": {
+  "verified": true,
+  "issues": []
+ },
+ "K03": {
+  "verified": true,
+  "issues": []
+ },
+ "K04": {
+  "verified": true,
+  "issues": []
+ },
+ "K05": {
+  "verified": false,
+  "issues": [
+   "FAIL Udyam registration: Udyam certificate missing"
+  ]
+ },
+ "K06": {
+  "verified": false,
+  "issues": [
+   "FAIL GSTIN format & checksum: GSTIN checksum does not match (possible typo or tampering) — registry has a GSTIN differing in 2 character(s) for \"Saffron Unisex Salon\", so the number on this certificate looks altered",
+   "FAIL GST registry lookup: GSTIN not found in GST registry"
+  ]
+ },
+ "K07": {
+  "verified": false,
+  "issues": [
+   "FAIL Names on GST certificate match registry: Legal name on certificate \"Neha Banerjee (Prop. Shri Physio Clinic)\" ≠ registry \"Neha Banerjee (Prop. Neelgiri Physio Clinic)\""
+  ]
+ },
+ "K08": {
+  "verified": true,
+  "issues": []
+ },
+ "K09": {
+  "verified": true,
+  "issues": []
+ },
+ "K10": {
+  "verified": true,
+  "issues": []
+ },
+ "K11": {
+  "verified": false,
+  "issues": [
+   "FAIL Address proof ≤ 90 days old: Bill dated 2025-10-31 (257 days old)"
+  ]
+ },
+ "K12": {
+  "verified": true,
+  "issues": []
+ }
+}

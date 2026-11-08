@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# runtime prototype data (sessions, orders, leads)
+/data/store.json
+!.env.example

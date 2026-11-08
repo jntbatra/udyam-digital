@@ -1,26 +1,84 @@
 @import "tailwindcss";
 
+/* Palette: Airtel red, white, charcoal, greys only. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f4f5;
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-solid: #ffffff;
+  --foreground: #1d1d1f;
+  --muted: #6e6e73;
+  --border: rgba(29, 29, 31, 0.08);
+  --brand: #e40000;
+  --brand-dark: #b80000;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(228, 0, 0, 0.07);
+  --accent: #e40000;
+  --good: #1d1d1f;
+  --warn: #6e6e73;
+  --bad: #e40000;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-accent: var(--accent);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Soft backdrop so the glass has something to blur. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  border-radius: 9999px;
+  filter: blur(90px);
+  pointer-events: none;
+}
+body::before {
+  width: 520px; height: 520px; top: -160px; right: -120px;
+  background: rgba(228, 0, 0, 0.10);
+}
+body::after {
+  width: 460px; height: 460px; bottom: -180px; left: -140px;
+  background: rgba(29, 29, 31, 0.06);
+}
+
+.glass {
+  background: var(--surface);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 10px 30px rgba(29, 29, 31, 0.05);
+}
+
+@keyframes ring {
+  0% { box-shadow: 0 0 0 0 rgba(228, 0, 0, 0.35); }
+  100% { box-shadow: 0 0 0 28px rgba(228, 0, 0, 0); }
+}
+.mic-live { animation: ring 1.4s ease-out infinite; }
+
+@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.breathe { animation: breathe 1.6s ease-in-out infinite; }
+
+::selection { background: rgba(228, 0, 0, 0.15); }
+input, select, textarea { outline: none; }
+input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px rgba(228, 0, 0, 0.15); border-color: rgba(228, 0, 0, 0.4) !important; }
