@@ -1,6 +1,6 @@
 "use client";
 /**
- * In-browser voice mode (Nova Sonic via our voice-server relay).
+ * In-browser voice mode via the voice-server relay.
  * Mic -> AudioWorklet -> 16 kHz PCM16 -> WebSocket; PCM16 back -> Web Audio queue.
  * Barge-in: server sends {type:"interrupted"} and we flush the playback queue.
  */
@@ -65,8 +65,8 @@ export function VoiceMode({ sessionId, language, onUpdate }: { sessionId: string
   const T = {
     title: hi ? "वॉइस मोड" : "Voice mode",
     consent: hi
-      ? "आपकी आवाज़ का जवाब देने के लिए उसे AWS पर प्रोसेस किया जाता है; ट्रांसक्रिप्ट 30 दिन रखा जाता है।"
-      : "Voice is processed by AWS to answer you; transcript kept 30 days",
+      ? "आपकी आवाज़ का जवाब देने के लिए उसे सुरक्षित voice service पर प्रोसेस किया जाता है; ट्रांसक्रिप्ट 30 दिन रखा जाता है।"
+      : "Voice is processed by a secure voice service to answer you; transcript kept 30 days",
     agree: hi ? "मैं सहमत हूँ" : "I agree",
     tap: hi ? "माइक दबाइए और बात कीजिए — जैसे फ़ोन पर" : "Tap and just talk — like a phone call",
     end: hi ? "बंद करें" : "End",

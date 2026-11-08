@@ -22,6 +22,21 @@ npm run voice                   # voice relay on ws://localhost:3001 (separate t
 
 AWS credentials are read from the default chain. Paid services used: Bedrock Mantle (Gemma 4), Textract, Nova Sonic. Set `ADVISOR_MODE=guided` for a zero-cost offline advisor.
 
+### Multilingual voice with Sarvam AI
+
+Voice mode defaults to Amazon Nova Sonic (English/Hindi). To enable Sarvam voice mode for the 12 advisor languages (English plus Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia and Assamese):
+
+```bash
+# In .env.local
+VOICE_PROVIDER=sarvam
+SARVAM_API_KEY=your_server_side_key
+SARVAM_STT_MODEL=saaras:v3-realtime
+SARVAM_TTS_MODEL=bulbul:v3
+SARVAM_SPEAKER=shubh
+```
+
+Keep `SARVAM_API_KEY` server-side; do not prefix it with `NEXT_PUBLIC_`. Restart `npm run voice` after changing environment variables. The browser streams 16 kHz PCM audio to the voice relay, which sends it to Sarvam realtime STT, passes final transcripts through the existing advisor and deterministic rule engine, and sends Sarvam TTS audio back to the browser. `VOICE_PROVIDER=nova` preserves the original Nova Sonic path. Sarvam TTS currently supports the documented 11 Indian language codes; Assamese input is transcribed by STT, while spoken replies fall back to English because Bulbul does not currently expose `as-IN`.
+
 ## Checks (no AWS calls)
 
 ```bash

@@ -2,7 +2,7 @@
 import { Button, Card } from "./ui";
 import { VoiceMode } from "./VoiceMode";
 
-/** Voice entry point on the advisor page (Hindi / English — Nova Sonic). */
+/** Voice entry point on the advisor page. */
 export function VoiceSlot(props: { sessionId: string; language: string; open: boolean; onToggle: (v: boolean) => void; onUpdate?: () => void }) {
   if (props.open)
     return (
@@ -16,7 +16,7 @@ export function VoiceSlot(props: { sessionId: string; language: string; open: bo
       <span className="text-2xl"></span>
       <div className="text-sm">
         <div className="font-medium">Talk instead of typing</div>
-        <div className="text-muted">Talk like a phone call — Hindi or English, detected automatically</div>
+        <div className="text-muted">Talk like a phone call — English or any supported Indian language</div>
       </div>
       <Button className="ml-auto" variant="outline" onClick={() => props.onToggle(true)}>Start voice</Button>
     </Card>

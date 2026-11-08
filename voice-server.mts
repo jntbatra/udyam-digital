@@ -1,5 +1,5 @@
 /**
- * Voice mode relay: browser <-> this WebSocket server <-> Amazon Nova Sonic
+ * Voice mode relay: browser <-> this WebSocket server <-> Amazon Nova Sonic or Sarvam
  * (Bedrock InvokeModelWithBidirectionalStream). Bedrock credentials stay here.
  *
  * Run from the app root:  npx tsx voice-server.mts
@@ -12,6 +12,11 @@
  *   SONIC_MAX_SECONDS(default 120, hard cap per connection)
  *   SONIC_SCRIPT     mixed | devanagari | latin | off  (Hindi transcript script speech prompt, default mixed)
  *   SONIC_HISTORY    1 | 0  (seed recent chat history into the voice session, default 1)
+ *   VOICE_PROVIDER   nova | sarvam (default nova)
+ *   SARVAM_API_KEY   Sarvam subscription key when VOICE_PROVIDER=sarvam
+ *   SARVAM_STT_MODEL Sarvam realtime STT model (default saaras:v3-realtime)
+ *   SARVAM_TTS_MODEL Sarvam TTS model (default bulbul:v3)
+ *   SARVAM_SPEAKER   Sarvam TTS speaker (default shubh)
  *
  * WebSocket protocol (path /voice?session=<sessionId>):
  *   browser -> server : binary = PCM16 LE mono 16 kHz mic audio
@@ -28,19 +33,21 @@ import path from "node:path";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import {
   BedrockRuntimeClient,
   InvokeModelWithBidirectionalStreamCommand,
   type InvokeModelWithBidirectionalStreamInput,
 } from "@aws-sdk/client-bedrock-runtime";
+import { SarvamAIClient } from "sarvamai";
+import type { SarvamAI } from "sarvamai";
 import { NodeHttp2Handler } from "@smithy/node-http-handler";
 import type { Session } from "./src/lib/store";
 
 // src/lib reads data/ relative to process.cwd(); make that the app root regardless of where we're launched.
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 process.chdir(APP_ROOT);
-const { TOOLS, runTool, extractFacts, applyProfile, doRecommend, autoLanguage } = await import("./src/lib/advisor");
+const { TOOLS, runTool, extractFacts, applyProfile, doRecommend, autoLanguage, advisorTurn } = await import("./src/lib/advisor");
 const { db, nowIso } = await import("./src/lib/store");
 
 const PORT = Number(process.env.VOICE_PORT || 3001);
@@ -48,12 +55,34 @@ const MODEL_ID = process.env.SONIC_MODEL_ID || "amazon.nova-2-5-sonic";
 const REGION = process.env.SONIC_REGION || "us-east-1";
 const VOICE = process.env.SONIC_VOICE || "kiara";
 const MAX_SECONDS = Number(process.env.SONIC_MAX_SECONDS || 600);
+const VOICE_PROVIDER = (process.env.VOICE_PROVIDER || "nova").toLowerCase();
+const SARVAM_API_KEY = process.env.SARVAM_API_KEY || "";
+const SARVAM_STT_MODEL = process.env.SARVAM_STT_MODEL || "saaras:v3-realtime";
+const SARVAM_TTS_MODELS = new Set<SarvamAI.TextToSpeechModel>(["bulbul:v2", "bulbul:v3", "bulbul:v4-flash"]);
+const SARVAM_TTS_SPEAKERS = new Set<SarvamAI.TextToSpeechSpeaker>([
+  "aditya", "ritu", "ashutosh", "priya", "neha", "rahul", "pooja", "rohan", "simran", "kavya",
+  "amit", "dev", "ishita", "shreya", "ratan", "varun", "manan", "sumit", "roopa", "kabir",
+  "aayan", "shubh", "advait", "anand", "tanya", "tarun", "sunny", "mani", "gokul", "vijay",
+  "shruti", "suhani", "mohit", "kavitha", "rehan", "soham", "rupali",
+]);
+const SARVAM_TTS_MODEL: SarvamAI.TextToSpeechModel = SARVAM_TTS_MODELS.has(process.env.SARVAM_TTS_MODEL as SarvamAI.TextToSpeechModel)
+  ? process.env.SARVAM_TTS_MODEL as SarvamAI.TextToSpeechModel
+  : "bulbul:v3";
+const SARVAM_SPEAKER: SarvamAI.TextToSpeechSpeaker = SARVAM_TTS_SPEAKERS.has(process.env.SARVAM_SPEAKER as SarvamAI.TextToSpeechSpeaker)
+  ? process.env.SARVAM_SPEAKER as SarvamAI.TextToSpeechSpeaker
+  : "shubh";
 const SCRIPT = (process.env.SONIC_SCRIPT || "mixed").toLowerCase();
 const USE_HISTORY = process.env.SONIC_HISTORY !== "0";
 const INPUT_RATE = 16000;
 const OUTPUT_RATE = 24000;
 const STORE_FILE = path.join(APP_ROOT, "data", "store.json");
 const BUNDLE_TOOLS = new Set(["recommend_bundle", "change_bundle", "price_objection", "update_profile", "lookup_gstin"]);
+const SARVAM_LANGUAGES: Record<string, string> = {
+  English: "en-IN", Hindi: "hi-IN", Tamil: "ta-IN", Telugu: "te-IN", Bengali: "bn-IN",
+  Marathi: "mr-IN", Gujarati: "gu-IN", Kannada: "kn-IN", Malayalam: "ml-IN",
+  Punjabi: "pa-IN", Odia: "od-IN", Assamese: "as-IN",
+};
+const sarvamClient = SARVAM_API_KEY ? new SarvamAIClient({ apiSubscriptionKey: SARVAM_API_KEY }) : null;
 
 // Speech prompts must be used verbatim (AWS Nova 2 Sonic "Voice conversation prompts" doc).
 const SPEECH_PROMPTS: Record<string, string> = {
@@ -119,6 +148,121 @@ Current saved profile: ${JSON.stringify(s.profile)}
 Current bundle: ${JSON.stringify(s.bundle.map((b) => `${b.productId}x${b.qty}`))}`;
 }
 
+function sarvamLanguage(s: Session) {
+  return SARVAM_LANGUAGES[s.language] ?? "en-IN";
+}
+
+function sarvamTtsLanguage(s: Session): SarvamAI.TextToSpeechLanguage {
+  const language = sarvamLanguage(s);
+  return language === "as-IN" ? "en-IN" : language as SarvamAI.TextToSpeechLanguage;
+}
+
+function pcmFromWav(input: Buffer) {
+  if (input.subarray(0, 4).toString("ascii") !== "RIFF") return input;
+  const channels = input.readUInt16LE(22);
+  const bits = input.readUInt16LE(34);
+  let offset = 12;
+  while (offset + 8 <= input.length) {
+    const id = input.subarray(offset, offset + 4).toString("ascii");
+    const size = input.readUInt32LE(offset + 4);
+    if (id === "data") {
+      if (channels !== 1 || bits !== 16) throw new Error("Sarvam TTS returned unsupported WAV format");
+      return input.subarray(offset + 8, offset + 8 + size);
+    }
+    offset += 8 + size;
+  }
+  throw new Error("Sarvam TTS returned WAV without an audio data chunk");
+}
+
+async function sarvamSpeak(text: string, languageCode: SarvamAI.TextToSpeechLanguage) {
+  if (!sarvamClient) throw new Error("Sarvam voice is not configured. Set SARVAM_API_KEY.");
+  const response = await sarvamClient.textToSpeech.convert({
+    text: text.slice(0, 2000),
+    language_code: languageCode,
+    speaker: SARVAM_SPEAKER,
+    model: SARVAM_TTS_MODEL,
+    speech_sample_rate: 24000,
+    output_audio_codec: "wav",
+  });
+  if (!response.audios[0]) throw new Error("Sarvam TTS returned no audio");
+  return pcmFromWav(Buffer.from(response.audios[0], "base64"));
+}
+
+function sarvamTranscript(message: unknown) {
+  const m = message as { event?: string; transcript?: string; text?: string; data?: { transcript?: string; text?: string } };
+  if (!m.event?.toLowerCase().includes("transcript") || m.event.toLowerCase().includes("partial")) return null;
+  return (m.transcript ?? m.text ?? m.data?.transcript ?? m.data?.text ?? "").trim() || null;
+}
+
+function handleSarvamConnection(ws: WebSocket, sessionId: string) {
+  if (!SARVAM_API_KEY) {
+    ws.send(JSON.stringify({ type: "error", message: "Sarvam voice is not configured. Set SARVAM_API_KEY." }));
+    ws.close(1011, "Sarvam not configured");
+    return;
+  }
+  const s = freshSession(sessionId);
+  if (!s) {
+    ws.send(JSON.stringify({ type: "error", message: "unknown session" }));
+    ws.close(4004, "unknown session");
+    return;
+  }
+  const languageCode = sarvamLanguage(s);
+  const sttUrl = `wss://api.sarvam.ai/speech-to-text-realtime/ws?model=${encodeURIComponent(SARVAM_STT_MODEL)}&language_code=${encodeURIComponent(languageCode)}`;
+  const stt = new WebSocket(sttUrl, { headers: { "api-subscription-key": SARVAM_API_KEY } });
+  let started = false;
+  let closed = false;
+  let pendingAudio: Buffer[] = [];
+
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    stt.close();
+    if (ws.readyState === ws.OPEN) ws.close();
+  };
+  const respond = async (text: string) => {
+    const session = freshSession(sessionId);
+    if (!session) throw new Error("session not found");
+    const out = await advisorTurn(session, text.slice(0, 2000), "voice");
+    ws.send(JSON.stringify({ type: "transcript", role: "assistant", text: out.text, final: true }));
+    ws.send(JSON.stringify({ type: "bundle_updated" }));
+    ws.send(await sarvamSpeak(out.text, sarvamTtsLanguage(session)));
+  };
+
+  stt.on("open", () => {
+    started = true;
+    ws.send(JSON.stringify({ type: "hello", provider: "sarvam", language: languageCode }));
+    ws.send(JSON.stringify({ type: "ready", sampleRate: 24000, maxSeconds: MAX_SECONDS }));
+    for (const audio of pendingAudio) stt.send(JSON.stringify({ event: "audio_input", audio: audio.toString("base64") }));
+    pendingAudio = [];
+  });
+  stt.on("message", (raw) => {
+    try {
+      const message = JSON.parse(String(raw));
+      const transcript = sarvamTranscript(message);
+      if (!transcript) return;
+      ws.send(JSON.stringify({ type: "transcript", role: "user", text: transcript, final: true }));
+      void respond(transcript).catch((e: unknown) => ws.send(JSON.stringify({ type: "error", message: (e as Error).message })));
+    } catch (e) {
+      ws.send(JSON.stringify({ type: "error", message: (e as Error).message }));
+    }
+  });
+  stt.on("error", (e) => ws.send(JSON.stringify({ type: "error", message: `Sarvam STT error: ${e.message}` })));
+  stt.on("close", () => { if (!closed && started) ws.send(JSON.stringify({ type: "ended", reason: "stt_closed", seconds: 0 })); });
+
+  ws.on("message", (raw, isBinary) => {
+    if (!isBinary) {
+      const message = JSON.parse(String(raw)) as { type?: string };
+      if (message.type === "stop") close();
+      return;
+    }
+    const audio = Buffer.from(raw as Buffer);
+    if (started && stt.readyState === stt.OPEN) stt.send(JSON.stringify({ event: "audio_input", audio: audio.toString("base64") }));
+    else pendingAudio.push(audio);
+  });
+  ws.on("close", close);
+  ws.on("error", close);
+}
+
 /** OpenAI-style function tools -> Sonic toolSpec (inputSchema.json is a stringified JSON schema, as in the AWS samples). */
 const SONIC_TOOLS = TOOLS.map((t) => ({
   toolSpec: {
@@ -162,6 +306,7 @@ class EventQueue implements AsyncIterable<InvokeModelWithBidirectionalStreamInpu
 
 /* ---------------- one voice connection ---------------- */
 function handleConnection(ws: WebSocket, sessionId: string) {
+  if (VOICE_PROVIDER === "sarvam") return handleSarvamConnection(ws, sessionId);
   const send = (o: Record<string, unknown>) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(o));
   const tag = `[voice ${sessionId}]`;
   let started = false;

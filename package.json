@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3100",
-    "voice": "tsx watch --clear-screen=false voice-server.mts",
+    "voice": "node --env-file=.env.local --import tsx voice-server.mts",
     "dev:all": "npm run voice & npm run dev",
     "build": "next build",
     "start": "next start -p 3100",
@@ -32,6 +32,7 @@
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "sarvamai": "^1.1.17",
     "tesseract.js": "^7.0.0",
     "ws": "^8.22.1",
     "zod": "^4.6.7"
