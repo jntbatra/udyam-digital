@@ -1,6 +1,6 @@
-# Udyam Digital — SMB onboarding prototype
+# Accel Business — SMB onboarding prototype (YTL case "Project Udyam Digital")
 
-YTL Hackathon 2026 · Enterprise Track A. All data is synthetic; the telecom brand is fictional.
+YTL Hackathon 2026 · Enterprise Track A. All data is synthetic; Accel Telecom is fictional.
 
 A small-business owner goes from "tell me about your business" to an activated, tracked order in one sitting:
 
@@ -9,7 +9,7 @@ A small-business owner goes from "tell me about your business" to an activated, 
 3. **Smart KYC** (`/kyc`) — consent screen first → GSTIN format/checksum + mock registry lookup → mock DigiLocker/Entity Locker → upload only what's missing (AWS Textract OCR in memory) → cross-checks (status, names, state, address PIN, 90-day bill, signatory) → simulated e-sign.
 4. **Tracker** (`/track`) — 8 stages, ETA = longest install time, WhatsApp-style updates, auto-escalation when late, reschedule.
 5. **Owner account** (`/account`) — plan, post-activation add-ons, support tickets, **privacy center** (consents, download, delete).
-6. **Local Udyam Digital Expert** (`/expert`) and **Manager** (`/manager`) — AI-routed leads with propensity score + reasons, offer-to-top-3 assignment, manager override, manager-only discount approval, payouts (70% on connection / 30% at 6 months).
+6. **Local Accel Expert** (`/expert`) and **Manager** (`/manager`) — AI-routed leads with propensity score + reasons, offer-to-top-3 assignment, manager override, manager-only discount approval, payouts (70% on connection / 30% at 6 months).
 
 ## Run
 

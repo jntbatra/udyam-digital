@@ -17,7 +17,7 @@ const T = {
     consentAgree: "I agree — use my details for KYC",
     marketing: "Also send me offers on WhatsApp (optional)",
     talkHuman: "Talk to a human",
-    handoffAsk: "Can a local Udyam Digital expert call or visit you? They will see only your name, business, area and draft plan.",
+    handoffAsk: "Can a local Accel expert call or visit you? They will see only your name, business, area and draft plan.",
     yes: "Yes", no: "No",
   },
   Hindi: {
@@ -36,7 +36,7 @@ const T = {
     consentAgree: "मैं सहमत हूँ — KYC के लिए मेरी जानकारी इस्तेमाल करें",
     marketing: "मुझे WhatsApp पर ऑफ़र भी भेजें (वैकल्पिक)",
     talkHuman: "किसी व्यक्ति से बात करें",
-    handoffAsk: "क्या कोई लोकल Udyam Digital एक्सपर्ट आपको कॉल या विज़िट कर सकता है? उन्हें सिर्फ़ आपका नाम, बिज़नेस, इलाका और प्लान दिखेगा।",
+    handoffAsk: "क्या कोई लोकल Accel एक्सपर्ट आपको कॉल या विज़िट कर सकता है? उन्हें सिर्फ़ आपका नाम, बिज़नेस, इलाका और प्लान दिखेगा।",
     yes: "हाँ", no: "नहीं",
   },
 } satisfies Record<Lang, Record<string, string>>;
