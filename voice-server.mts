@@ -347,7 +347,18 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
   });
   ws.on("close", () => { clearInterval(micLog); console.log(`${vtag} browser closed (mic ${(micBytes / 32000).toFixed(1)}s)`); close(); });
   ws.on("error", close);
-  stt.on("close", (c, r) => console.log(`${vtag} sarvam STT closed ${c} ${String(r).slice(0, 120)}`));
+  stt.on("close", (c, r) => {
+    const reason = String(r);
+    console.log(`${vtag} sarvam STT closed ${c} ${reason.slice(0, 120)}`);
+    // Speech service dropped us while the owner is still connected: say so instead of failing silently.
+    if (ws.readyState === WebSocket.OPEN) {
+      const credits = /credit|quota|subscription/i.test(reason);
+      ws.send(JSON.stringify({ type: "error", message: credits
+        ? "Voice is unavailable right now (speech service out of credits). Please use Type instead."
+        : "Voice connection dropped. Please try again or use Type." }));
+      ws.close(1011, "stt closed");
+    }
+  });
 }
 
 /** OpenAI-style function tools -> Sonic toolSpec (inputSchema.json is a stringified JSON schema, as in the AWS samples). */
