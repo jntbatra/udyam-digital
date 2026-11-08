@@ -139,7 +139,10 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
-function systemPrompt(s: Session) {
+function systemPrompt(s: Session, channel: "chat" | "voice" = "chat") {
+  const voiceRules = channel === "voice"
+    ? "\nVOICE CALL: you are speaking on a live call. Reply in at most 2 short spoken sentences (under 30 words), no lists or symbols, end with one question. If the owner interrupted you, drop what you were saying and answer what they just said."
+    : "";
   return `You are "Udyam Saathi", Udyam Digital's advisor for small businesses in India.
 Reply in the language the owner is using right now — currently ${s.language}${s.language === "English" ? "" : " (simple everyday words, native script; product names may stay in English)"}. If they switch language, switch with them.
 Goal: understand the business in a few short questions, then recommend a bundle with ONE clear monthly price.
@@ -160,7 +163,7 @@ Rules:
 - Do not ask again for anything already in the saved profile below.
 Current saved profile: ${JSON.stringify(s.profile)}
 Still needed: ${missingFor(s.profile).join(", ") || "nothing — recommend now"}
-Current bundle: ${JSON.stringify(s.bundle.map((b) => `${b.productId}x${b.qty}`))}`;
+Current bundle: ${JSON.stringify(s.bundle.map((b) => `${b.productId}x${b.qty}`))}${voiceRules}`;
 }
 
 export type ToolEvent = { name: string; result: unknown };
@@ -314,7 +317,7 @@ export async function advisorTurn(s: Session, userText: string, channel: "chat" 
     .filter((m) => m.role !== "system")
     .slice(-14)
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.text }));
-  const messages: ChatMessage[] = [{ role: "system", content: systemPrompt(s) }, ...history];
+  const messages: ChatMessage[] = [{ role: "system", content: systemPrompt(s, channel) }, ...history];
   const events: ToolEvent[] = [];
   let text = "";
   for (let step = 0; step < 4; step++) {
@@ -331,7 +334,7 @@ export async function advisorTurn(s: Session, userText: string, channel: "chat" 
       messages.push({ role: "tool", tool_call_id: c.id, content: JSON.stringify(result).slice(0, 4000) });
     }
     // refresh system prompt with new state
-    messages[0] = { role: "system", content: systemPrompt(s) };
+    messages[0] = { role: "system", content: systemPrompt(s, channel) };
   }
   // Deterministic safety net: once the profile is complete, the engine builds the plan
   // even if the model forgot to call recommend_bundle; the model only phrases it.
@@ -341,7 +344,7 @@ export async function advisorTurn(s: Session, userText: string, channel: "chat" 
     try {
       const { message } = await chatCompletion({
         messages: [
-          { role: "system", content: systemPrompt(s) },
+          { role: "system", content: systemPrompt(s, channel) },
           { role: "user", content: `[Note from the system, not the customer] The rule engine built this plan: ${JSON.stringify(rec)}. Explain it to the owner in ${s.language} in under 80 words: list each product with its short reason, the monthly price, one-time setup, install days, and any excluded product with its alternative. End by asking them to tap "View quote". Speak as the advisor.` },
         ],
         max_tokens: 500,

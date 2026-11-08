@@ -16,7 +16,8 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-sans">
+      {/* suppressHydrationWarning: browser extensions (e.g. Video Speed Controller adds "vsc-initialized") edit <body> before React loads */}
+      <body className="min-h-full flex flex-col font-sans" suppressHydrationWarning>
         <TopBar />
         <main className="flex-1 w-full">{children}</main>
         <footer className="text-xs text-muted text-center py-8 px-4">

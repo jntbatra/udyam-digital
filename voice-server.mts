@@ -228,15 +228,59 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
     stt.close();
     if (ws.readyState === ws.OPEN) ws.close();
   };
-  const respond = async (text: string, detected?: string) => {
+  // ---- turn-taking: barge-in + sentence-by-sentence speech ----
+  let generation = 0; // bumped whenever the owner interrupts; stale replies are dropped
+  let speakingUntil = 0; // when the audio we've sent will finish playing (ms epoch)
+  let replying = false;
+  let lastSpoken = "";
+  const assistantBusy = () => replying || Date.now() < speakingUntil;
+  // speaker echo guard: a "partial" that mostly repeats our own words is the mic hearing us, not the owner
+  const isEcho = (partial: string) => {
+    const words = partial.toLowerCase().split(/\s+/).filter((w) => w.length > 1);
+    if (!words.length || !lastSpoken) return false;
+    const mine = new Set(lastSpoken.toLowerCase().split(/\s+/));
+    return words.filter((w) => mine.has(w)).length / words.length >= 0.6;
+  };
+  const interrupt = () => {
+    generation++;
+    speakingUntil = 0;
+    ws.send(JSON.stringify({ type: "interrupted" }));
     const session = freshSession(sessionId);
-    if (!session) throw new Error("session not found");
-    // Follow the language the owner is speaking (Sarvam's detection; advisorTurn also checks the script).
-    if (detected && LANGUAGE_BY_CODE[detected]) session.language = LANGUAGE_BY_CODE[detected];
-    const out = await advisorTurn(session, text.slice(0, 2000), "voice");
-    ws.send(JSON.stringify({ type: "transcript", role: "assistant", text: out.text, final: true }));
-    ws.send(JSON.stringify({ type: "bundle_updated" }));
-    ws.send(await sarvamSpeak(out.text, sarvamTtsLanguage(session)));
+    const last = session?.messages.at(-1);
+    if (session && last?.role === "assistant" && !last.text.endsWith("[interrupted]")) {
+      last.text = `${last.text} [interrupted]`;
+      saveNow(session);
+    }
+  };
+  const sentences = (t: string) => t.replace(/\s+/g, " ").match(/[^.!?।]+[.!?।]+|[^.!?।]+$/g)?.map((x) => x.trim()).filter(Boolean) ?? [t];
+
+  const respond = async (text: string, detected?: string) => {
+    const gen = generation;
+    replying = true;
+    try {
+      const session = freshSession(sessionId);
+      if (!session) throw new Error("session not found");
+      // Follow the language the owner is speaking (Sarvam's detection; advisorTurn also checks the script).
+      if (detected && LANGUAGE_BY_CODE[detected]) session.language = LANGUAGE_BY_CODE[detected];
+      const out = await advisorTurn(session, text.slice(0, 2000), "voice");
+      if (gen !== generation) return; // owner spoke again meanwhile — answer that instead
+      ws.send(JSON.stringify({ type: "transcript", role: "assistant", text: out.text, final: true }));
+      ws.send(JSON.stringify({ type: "bundle_updated" }));
+      lastSpoken = out.text.replace(/[^\p{L}\p{N}\s]/gu, " ");
+      const lang = sarvamTtsLanguage(session);
+      // speak sentence by sentence so the first one plays while the rest is synthesised
+      let next = sentences(out.text).map((x) => sarvamSpeak(x, lang));
+      for (const pcm of next) {
+        const audio = await pcm;
+        if (gen !== generation || ws.readyState !== ws.OPEN) return;
+        ws.send(audio);
+        const ms = (audio.length / 2 / 24000) * 1000;
+        speakingUntil = Math.max(Date.now(), speakingUntil) + ms;
+      }
+      next = [];
+    } finally {
+      replying = false;
+    }
   };
 
   stt.on("open", () => {
@@ -248,9 +292,13 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
   });
   stt.on("message", (raw) => {
     try {
-      const message = JSON.parse(String(raw));
+      const message = JSON.parse(String(raw)) as { event?: string; text?: string };
+      // Barge-in: the owner started talking while we speak/think -> stop playback, drop the stale reply.
+      // Triggered on real words (partial transcript), not raw VAD, so speaker echo doesn't cut us off.
+      if (message.event === "transcript.partial" && (message.text ?? "").trim().length >= 3 && assistantBusy() && !isEcho(message.text ?? "")) interrupt();
       const transcript = sarvamTranscript(message);
       if (!transcript) return;
+      if (assistantBusy() && isEcho(transcript.text)) return; // our own voice through the speakers
       ws.send(JSON.stringify({ type: "transcript", role: "user", text: transcript.text, final: true }));
       ws.send(JSON.stringify({ type: "thinking" }));
       // one reply at a time, in order
