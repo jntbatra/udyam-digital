@@ -331,7 +331,6 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
     }
   });
   stt.on("error", (e) => { console.log(`${vtag} STT error: ${e.message}`); ws.send(JSON.stringify({ type: "error", message: `Sarvam STT error: ${e.message}` })); });
-  stt.on("close", () => { if (!closed && started) ws.send(JSON.stringify({ type: "ended", reason: "stt_closed", seconds: 0 })); });
 
   ws.on("message", (raw, isBinary) => {
     if (!isBinary) {
@@ -351,7 +350,7 @@ function handleSarvamConnection(ws: WebSocket, sessionId: string) {
     const reason = String(r);
     console.log(`${vtag} sarvam STT closed ${c} ${reason.slice(0, 120)}`);
     // Speech service dropped us while the owner is still connected: say so instead of failing silently.
-    if (ws.readyState === WebSocket.OPEN) {
+    if (!closed && ws.readyState === WebSocket.OPEN) {
       const credits = /credit|quota|subscription/i.test(reason);
       ws.send(JSON.stringify({ type: "error", message: credits
         ? "Voice is unavailable right now (speech service out of credits). Please use Type instead."
