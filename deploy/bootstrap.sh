@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time server setup for the Udyam demo on Amazon Linux 2023 (arm64, t4g.small).
+# One-time server setup for the Udyam demo on Amazon Linux 2023 (arm64 t4g or x86_64 t3a).
 # Run as root from /opt/udyam after the repo is cloned. Secrets come from SSM Parameter Store (/udyam/*).
 set -euxo pipefail
 REGION=ap-south-1
@@ -14,15 +14,17 @@ if ! swapon --show | grep -q /swapfile; then
   echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
-# Node.js 22 (official arm64 build)
+ARCH=$(uname -m)                       # aarch64 (t4g) or x86_64 (t3a)
+NODE_ARCH=$([ "$ARCH" = aarch64 ] && echo arm64 || echo x64)
+# Node.js 22 (official build)
 if ! command -v node >/dev/null || ! node -v | grep -q '^v22'; then
-  TARBALL=$(curl -fsSL https://nodejs.org/dist/latest-v22.x/ | grep -o 'node-v22[0-9.]*-linux-arm64.tar.xz' | head -1)
+  TARBALL=$(curl -fsSL https://nodejs.org/dist/latest-v22.x/ | grep -o "node-v22[0-9.]*-linux-$NODE_ARCH.tar.xz" | head -1)
   curl -fsSL "https://nodejs.org/dist/latest-v22.x/$TARBALL" | tar -xJ -C /usr/local --strip-components=1
 fi
 
 # cloudflared
 if ! command -v cloudflared >/dev/null; then
-  dnf install -y https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-aarch64.rpm
+  dnf install -y "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARCH.rpm"
 fi
 
 # app env (no AWS keys: the instance role provides credentials)

@@ -1,4 +1,4 @@
-# Deploy (AWS ap-south-1, t4g.small spot, Cloudflare Tunnel on accel.jayantb.dev)
+# Deploy (AWS ap-south-1, t3a.small spot, Cloudflare Tunnel on accel.jayantb.dev)
 
 - EC2 has **no inbound ports**: traffic arrives via Cloudflare Tunnel (`cloudflared-udyam`), admin via AWS SSM Session Manager.
 - Instance role `udyam-ec2-role`: Bedrock/Mantle inference, Textract DetectDocumentText, read `/udyam/*` SSM parameters, SSM core.
