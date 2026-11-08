@@ -428,7 +428,7 @@ export function extractFacts(text: string): Record<string, unknown> {
   ];
   let needs = needMap.filter(([re]) => re.test(x)).map(([, n]) => n);
   if (/\b(everything|all (the )?services|all of (it|them)|add all|sab kuch|sabhi)\b|सब कुछ|सभी सेवाएं|सब चाहिए/.test(x))
-    needs = [...new Set([...needs, "upi_pos", "mobile", "whatsapp", "cctv", "email", "backup", "wifi_guest", "website"] as Need[])];
+    needs = [...new Set([...needs, ...EVERYTHING])];
   if (needs.length) patch.needs = needs;
   if (/hotspot|हॉटस्पॉट/.test(x)) patch.currentInternet = "Mobile hotspot";
   else if (/home broadband|होम ब्रॉडबैंड/.test(x)) patch.currentInternet = "Home broadband";
@@ -509,6 +509,14 @@ function planFacts(s: Session) {
 }
 
 const NEED_KEYS = Object.keys(NEED_LABELS) as Need[];
+/** What "everything" means for a small business (enterprise add-ons only when asked by name). */
+const EVERYTHING: Need[] = ["internet", "upi_pos", "mobile", "whatsapp", "cctv", "email", "backup", "wifi_guest", "website"];
+const CATALOGUE_OVERVIEW = (() => {
+  const by = new Map<string, string[]>();
+  for (const p of data.products) by.set(p.category, [...(by.get(p.category) ?? []), p.product_name]);
+  return [...by].map(([c, names]) => `${c}: ${names.join(", ")}`).join(" | ");
+})();
+
 /** Products that a need brings into the plan (used when the owner asks to remove something). */
 const REMOVE_PRODUCTS: Partial<Record<Need, string[]>> = {
   mobile: ["P07", "P08"], cctv: ["P23"], upi_pos: ["P19"], whatsapp: ["P15"], website: ["P18"], email: ["P16"],
@@ -552,7 +560,9 @@ A bare answer like "16" or "yes" answers the question we were waiting for. Corre
     if (Number.isInteger(j.sites) && (j.sites as number) > 0 && (j.sites as number) < 500) out.sites = j.sites;
     if (typeof j.hasGstin === "boolean") out.hasGstin = j.hasGstin;
     if (Array.isArray(j.needs)) {
-      const n = j.needs.filter((x): x is Need => typeof x === "string" && NEED_KEYS.includes(x as Need));
+      let n = j.needs.filter((x): x is Need => typeof x === "string" && NEED_KEYS.includes(x as Need));
+      // "everything" -> the sensible small-business set, not every enterprise add-on in the catalogue
+      if (n.length >= 9) n = EVERYTHING;
       if (n.length) out.needs = n;
     }
     if (j.simOnly === true) out.simOnly = true;
@@ -697,6 +707,8 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   const remove = (facts.remove as Need[] | undefined) ?? [];
   delete facts.remove;
   const countsBefore = JSON.stringify([s.profile.cameras, s.profile.mobileLines]);
+  const keyBefore = JSON.stringify([s.profile.hasGstin, s.profile.gstinStatus, s.profile.employees, s.profile.sites, s.profile.cityTier, s.profile.segment, s.profile.simOnly]);
+  const askedNeeds = (facts.needs as Need[] | undefined) ?? [];
   if (remove.length) facts.needs = ((facts.needs as Need[] | undefined) ?? []).filter((n) => !remove.includes(n));
   if (Object.keys(facts).length) applyProfile(s, facts);
   const removedNow = remove.filter((n) => s.profile.needs?.includes(n) || REMOVE_PRODUCTS[n]?.some((pid) => s.bundle.some((b) => b.productId === pid)));
@@ -705,12 +717,16 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
     if (remove.includes("mobile")) s.profile.mobileLines = 0;
   }
   const countsChanged = JSON.stringify([s.profile.cameras, s.profile.mobileLines]) !== countsBefore;
+  // GST / size / location changes alter eligibility and price -> the plan must be rebuilt
+  const keyChanged = JSON.stringify([s.profile.hasGstin, s.profile.gstinStatus, s.profile.employees, s.profile.sites, s.profile.cityTier, s.profile.segment, s.profile.simOnly]) !== keyBefore;
+  // "add WhatsApp" when it's already a need but not in the plan -> try again (and say why if still not allowed)
+  const askedMissing = askedNeeds.filter((n) => REMOVE_PRODUCTS[n]?.length && !REMOVE_PRODUCTS[n]!.some((pid) => s.bundle.some((b) => b.productId === pid)));
   const newNeeds = (s.profile.needs ?? []).filter((n) => !prevNeeds.has(n));
 
   const notes: string[] = gstinNote ? [gstinNote] : [];
   let cheaper: { option: string; monthlyPrice: string; oneTimeSetup: string }[] = [];
   const complete = missingFor(s.profile).length === 0 && (s.profile.needs?.length || s.profile.simOnly);
-  if (complete && (!s.bundle.length || newNeeds.length || removedNow.length || countsChanged)) {
+  if (complete && (!s.bundle.length || newNeeds.length || removedNow.length || countsChanged || keyChanged || askedMissing.length)) {
     const r = doRecommend(s); // (re)build the plan from the rules
     if (r.ok && r.excluded?.length) notes.push(...r.excluded.map((e) => `${e.message}${e.alternative ? ` — alternative: ${e.alternative}` : ""}`));
   }
@@ -727,6 +743,11 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
   }
   const wantsHuman = ASK_HUMAN.test(userText);
   const changed = JSON.stringify(s.bundle) !== before;
+  for (const n of askedNeeds) {
+    const inPlan = REMOVE_PRODUCTS[n]?.some((pid) => s.bundle.some((b) => b.productId === pid));
+    if (REMOVE_PRODUCTS[n] && !inPlan && !notes.some((x) => x.toLowerCase().includes(n))) notes.push(`${NEED_LABELS[n]} could not be added with the current details`);
+    if (inPlan && changed) notes.push(`${NEED_LABELS[n]} is now in the plan`);
+  }
   const missing = missingFor(s.profile);
   const needsAsked = !!s.profile.needs?.length || !!s.profile.simOnly;
   // Our code decides the question; the model only words it.
@@ -748,6 +769,8 @@ export async function fastTurn(s: Session, userText: string, channel: "chat" | "
 Reply in ${s.language} (native script). ${style}
 Use ONLY the facts below. Never invent products, prices, numbers, timelines, calls or offers. Never ask about budget or anything not in "Your next step". Never add or combine amounts: say the monthly price and the one-time setup separately, exactly as written. Never mention discounts.
 If the owner interrupted you, drop what you were saying and answer what they just said.
+Services we offer (names only; prices come only from the plan): ${CATALOGUE_OVERVIEW}
+If asked what we offer, describe these in plain words and offer to add any to the plan.
 What we know: ${JSON.stringify({ business: s.profile.businessType, city: s.profile.city, employees: s.profile.employees, sites: s.profile.sites, gstin: s.profile.hasGstin, needs: s.profile.needs })}
 ${plan ? `Current plan: ${JSON.stringify(plan)}${changed ? " (just updated)" : ""}` : "No plan yet."}
 ${notes.length ? `Not possible: ${notes.join("; ")}` : ""}
