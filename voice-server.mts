@@ -183,6 +183,7 @@ async function sarvamSpeak(text: string, languageCode: SarvamAI.TextToSpeechLang
     model: SARVAM_TTS_MODEL,
     speech_sample_rate: 24000,
     output_audio_codec: "wav",
+    pace: Number(process.env.SARVAM_PACE || 1.2), // a little faster than default for a natural phone pace
   });
   if (!response.audios[0]) throw new Error("Sarvam TTS returned no audio");
   return pcmFromWav(Buffer.from(response.audios[0], "base64"));

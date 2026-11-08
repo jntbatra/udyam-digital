@@ -8,7 +8,7 @@ import { HttpRequest } from "@smithy/protocol-http";
 import { defaultProvider } from "@aws-sdk/credential-provider-node";
 
 export const LLM_REGION = process.env.MANTLE_REGION || "ap-south-1";
-export const LLM_MODEL = process.env.MANTLE_MODEL || "openai.gpt-oss-20b";
+export const LLM_MODEL = process.env.MANTLE_MODEL || "moonshotai.kimi-k2.5";
 const PATH = process.env.MANTLE_PATH || "/v1/chat/completions";
 
 /** Per-use endpoint (voice uses a low-latency model in Mumbai; chat keeps Gemma 4 for tool calling). */
@@ -16,7 +16,7 @@ export type LlmTarget = { region: string; model: string; path: string };
 export const CHAT_TARGET: LlmTarget = { region: LLM_REGION, model: LLM_MODEL, path: PATH };
 export const VOICE_TARGET: LlmTarget = {
   region: process.env.VOICE_LLM_REGION || "ap-south-1",
-  model: process.env.VOICE_LLM_MODEL || "openai.gpt-oss-20b",
+  model: process.env.VOICE_LLM_MODEL || "moonshotai.kimi-k2.5",
   path: process.env.VOICE_LLM_PATH || "/v1/chat/completions",
 };
 

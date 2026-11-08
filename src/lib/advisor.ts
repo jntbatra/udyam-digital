@@ -3,7 +3,7 @@
  * Shared by chat and voice (voice calls the same tool executors).
  */
 import { z } from "zod";
-import { chatCompletion, normaliseArgs, VOICE_TARGET, type ChatMessage, type ToolDef } from "./llm";
+import { chatCompletion, normaliseArgs, VOICE_TARGET, CHAT_TARGET, type ChatMessage, type ToolDef } from "./llm";
 import {
   recommend, priceBundle, cheaperOptions, upsellSuggestions, validateBundle, NEED_LABELS,
   type Need, type Profile, type Segment,
@@ -365,11 +365,22 @@ export async function advisorTurn(s: Session, userText: string, channel: "chat" 
 }
 
 const HI_NUM: Record<string, number> = { एक: 1, दो: 2, तीन: 3, चार: 4, पांच: 5, पाँच: 5, छह: 6, सात: 7, आठ: 8, नौ: 9, दस: 10, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
-const numBefore = (x: string, words: string) => {
-  const re = new RegExp(`(\\d+|${Object.keys(HI_NUM).join("|")})\\s*(?:ही\\s*|only\\s*)?(?:${words})`, "i");
+const numBefore = (x: string, words: string, gap = 0) => {
+  // gap = how many words may sit between the number and the noun ("दो किराना दुकानें", "2 grocery shops")
+  const between = gap ? `(?:[^\\s]+\\s+){0,${gap}}?` : "";
+  const re = new RegExp(`(\\d+|${Object.keys(HI_NUM).join("|")})\\s*(?:ही\\s*|only\\s*)?${between}(?:${words})`, "i");
   const m = x.match(re);
   if (!m) return undefined;
   return /^\d+$/.test(m[1]) ? +m[1] : HI_NUM[m[1].toLowerCase()];
+};
+
+/** Dataset cities as written in Devanagari (Hindi / Marathi speakers and Sarvam transcripts). */
+const CITY_DEVANAGARI: Record<string, string[]> = {
+  Ahmedabad: ["अहमदाबाद"], Bengaluru: ["बेंगलुरु", "बैंगलोर", "बेंगलुरू", "बंगलौर"], Bhopal: ["भोपाल"], Chennai: ["चेन्नई"],
+  Coimbatore: ["कोयंबटूर", "कोयम्बटूर"], Delhi: ["दिल्ली"], Hyderabad: ["हैदराबाद"], Indore: ["इंदौर"], Jaipur: ["जयपुर"],
+  Kochi: ["कोच्चि", "कोचीन", "कोची"], Kolkata: ["कोलकाता", "कलकत्ता"], Lucknow: ["लखनऊ"], Ludhiana: ["लुधियाना"],
+  Mumbai: ["मुंबई", "मुम्बई", "बंबई"], Mysuru: ["मैसूर", "मैसूरु"], Nagpur: ["नागपुर"], Nashik: ["नासिक", "नाशिक"],
+  Patna: ["पटना"], Pune: ["पुणे", "पूना"], Surat: ["सूरत"], Vadodara: ["वडोदरा", "बड़ौदा"], Visakhapatnam: ["विशाखापत्तनम", "विज़ाग", "वाइज़ैग"],
 };
 
 /** Speech-to-text often mishears city names by a letter ("Kachi" for Kochi): accept edit distance 1 on 5+ letter words. */
@@ -393,11 +404,11 @@ function fuzzyCity(x: string): string | undefined {
 export function extractFacts(text: string): Record<string, unknown> {
   const x = text.toLowerCase();
   const patch: Record<string, unknown> = {};
-  const city = data.cities.find((c) => x.includes(c.toLowerCase())) ?? fuzzyCity(x) ?? (/कोच्चि/.test(x) ? "Kochi" : /दिल्ली/.test(x) ? "Delhi" : /मुंबई/.test(x) ? "Mumbai" : /पुणे/.test(x) ? "Pune" : /लखनऊ/.test(x) ? "Lucknow" : /जयपुर/.test(x) ? "Jaipur" : /कोलकाता/.test(x) ? "Kolkata" : undefined);
+  const city = data.cities.find((c) => x.includes(c.toLowerCase())) ?? fuzzyCity(x) ?? Object.entries(CITY_DEVANAGARI).find(([, hi]) => hi.some((h) => x.includes(h)))?.[0];
   if (city) patch.city = city;
   const emp = numBefore(x, "लोग|staff|employees?|people|workers?|कर्मचारी|log");
   if (emp) patch.employees = emp;
-  const sites = numBefore(x, "ब्रांच|branch(?:es)?|sites?|locations?|stores?|outlets?|restaurants?|दुकानें|shops|clinics|offices");
+  const sites = numBefore(x, "ब्रांच|branch(?:es)?|sites?|locations?|stores?|outlets?|restaurants?|दुकानें|दुकान|शाखाएं|shops|clinics|offices", 2);
   if (sites) patch.sites = sites;
   const TYPES: [RegExp, string][] = [
     [/dental|डेंटल/, "Dental clinic"], [/clinic|क्लिनिक/, "Clinic"], [/kirana|किराना|grocery/, "Kirana store"],
@@ -496,16 +507,36 @@ function planFacts(s: Session) {
 }
 
 export async function voiceTurn(s: Session, userText: string) {
+  return fastTurn(s, userText, "voice");
+}
+
+/** GSTIN typed or spoken in the message -> verify against the registry (deterministic). */
+function gstinFromText(s: Session, text: string) {
+  const m = text.toUpperCase().replace(/\s/g, "").match(/\d{2}[A-Z]{5}\d{4}[A-Z][0-9A-Z]Z[0-9A-Z]/);
+  if (!m) return null;
+  const f = validateGstinFormat(m[0]);
+  if (!f.ok) return `GSTIN ${maskGstin(m[0])} is not valid: ${f.reason}`;
+  const reg = data.gstin(m[0]);
+  s.kyc.gstin = m[0];
+  s.profile.hasGstin = true;
+  s.profile.gstin = m[0];
+  s.profile.gstinStatus = reg ? reg.status : "Unknown";
+  if (reg) s.profile.businessName = s.profile.businessName ?? reg.trade_name;
+  return reg ? `GSTIN verified in registry: ${reg.trade_name}, ${reg.state}, status ${reg.status}` : "GSTIN format OK but not found in registry";
+}
+
+export async function fastTurn(s: Session, userText: string, channel: "chat" | "voice") {
   autoLanguage(s, userText);
-  s.messages.push({ role: "user", text: userText, at: nowIso(), channel: "voice" });
+  s.messages.push({ role: "user", text: userText, at: nowIso(), channel });
+  const gstinNote = gstinFromText(s, userText);
   const before = JSON.stringify(s.bundle);
   const prevNeeds = new Set(s.profile.needs ?? []);
   const facts = extractFacts(userText);
   if (Object.keys(facts).length) applyProfile(s, facts);
   const newNeeds = (s.profile.needs ?? []).filter((n) => !prevNeeds.has(n));
 
-  const notes: string[] = [];
-  let cheaper: { option: string; monthlyPrice: string }[] = [];
+  const notes: string[] = gstinNote ? [gstinNote] : [];
+  let cheaper: { option: string; monthlyPrice: string; oneTimeSetup: string }[] = [];
   const complete = missingFor(s.profile).length === 0 && (s.profile.needs?.length || s.profile.simOnly);
   if (complete && (!s.bundle.length || newNeeds.length)) {
     const r = doRecommend(s); // (re)build the plan from the rules
@@ -513,10 +544,14 @@ export async function voiceTurn(s: Session, userText: string) {
   }
   if (s.bundle.length && PRICE_OBJECTION.test(userText)) {
     s.priceObjections += 1;
-    cheaper = cheaperOptions(s.bundle, s.profile).slice(0, 2).map((o) => ({
-      option: o.label,
-      monthlyPrice: `₹${priceBundle(o.items, s.profile, { contractMonths: o.contractMonths ?? s.contractMonths }).monthlyWithSetup.toLocaleString("en-IN")} per month`,
-    }));
+    cheaper = cheaperOptions(s.bundle, s.profile).slice(0, 2).map((o) => {
+      const q = priceBundle(o.items, s.profile, { contractMonths: o.contractMonths ?? s.contractMonths });
+      return {
+        option: o.label,
+        monthlyPrice: `₹${q.monthlyWithSetup.toLocaleString("en-IN")} per month`,
+        oneTimeSetup: q.setupTotal ? `₹${q.setupTotal.toLocaleString("en-IN")} one-time` : "none",
+      };
+    });
   }
   const wantsHuman = ASK_HUMAN.test(userText);
   const changed = JSON.stringify(s.bundle) !== before;
@@ -532,8 +567,11 @@ export async function voiceTurn(s: Session, userText: string) {
     : "Continue the conversation";
 
   const plan = planFacts(s);
-  const system = `You are "Udyam Saathi", a warm advisor for small businesses on a LIVE VOICE CALL.
-Speak ${s.language} (native script), like a helpful person on the phone. At most 2 short sentences, under 30 words. No lists, no symbols, no markdown. End with one question.
+  const style = channel === "voice"
+    ? "You are on a LIVE VOICE CALL. Speak like a helpful person on the phone. At most 2 short sentences, under 30 words. No lists, no symbols, no markdown. End with one question."
+    : "You are chatting in an app. Be warm and brief: under 70 words. Plain text, no markdown or tables. When presenting a plan, put each product on its own line starting with \"- \" with its short reason, then the monthly price and setup on one line. End with one question.";
+  const system = `You are "Udyam Saathi", a warm advisor for small businesses in India.
+Reply in ${s.language} (native script). ${style}
 Use ONLY the facts below. Never invent products or numbers. Never add or combine amounts: say the monthly price and the one-time setup separately, exactly as written. Never mention discounts.
 If the owner interrupted you, drop what you were saying and answer what they just said.
 What we know: ${JSON.stringify({ business: s.profile.businessType, city: s.profile.city, employees: s.profile.employees, sites: s.profile.sites, gstin: s.profile.hasGstin, needs: s.profile.needs })}
@@ -548,13 +586,13 @@ Your next step: ${next}`;
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.text }));
   let text = "";
   try {
-    const { message } = await chatCompletion({ messages: [{ role: "system", content: system }, ...history], max_tokens: 400 }, VOICE_TARGET);
+    const { message } = await chatCompletion({ messages: [{ role: "system", content: system }, ...history], max_tokens: channel === "voice" ? 400 : 700 }, channel === "voice" ? VOICE_TARGET : CHAT_TARGET);
     text = (message.content ?? "").replace(/\*\*/g, "").trim();
   } catch {
     text = guidedNext(s).text;
   }
   if (!text) text = guidedNext(s).text;
-  s.messages.push({ role: "assistant", text, at: nowIso(), channel: "voice" });
+  s.messages.push({ role: "assistant", text, at: nowIso(), channel });
   db.saveSession(s);
-  return { text, changed };
+  return { text, changed, wantsHuman };
 }
