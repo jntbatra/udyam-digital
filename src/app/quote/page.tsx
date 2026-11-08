@@ -147,7 +147,32 @@ export default function QuotePage() {
                 <li key={c.label} className="flex items-center gap-2 text-sm">
                   <span className="flex-1">{c.label}</span>
                   <span className="font-medium">{inr(c.monthly)}</span>
-                  <Button size="sm" variant="outline" onClick={async () => { await patch({ bundle: c.items, ...(c.contractMonths ? { contractMonths: c.contractMonths } : {}) }); setShowCheaper(false); }}>Use</Button>
+                  {(() => {
+                    const sameBundle = c.items.length === s.bundle.length && c.items.every((item) => {
+                      const current = s.bundle.find((line) => line.productId === item.productId);
+                      return current?.qty === item.qty;
+                    });
+                    const sameContract = c.contractMonths === undefined || q.contractMonths === c.contractMonths;
+                    const applied = sameBundle && sameContract;
+                    return (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={applied}
+                        aria-label={applied ? `${c.label} is already applied` : `Use ${c.label}`}
+                        onClick={async () => {
+                          try {
+                            await patch({ bundle: c.items, ...(c.contractMonths ? { contractMonths: c.contractMonths } : {}) });
+                            setShowCheaper(false);
+                          } catch (e) {
+                            setErr((e as Error).message);
+                          }
+                        }}
+                      >
+                        {applied ? "Applied" : "Use"}
+                      </Button>
+                    );
+                  })()}
                 </li>
               ))}
             </ul>
