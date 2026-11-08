@@ -1,0 +1,17 @@
+[Unit]
+Description=Udyam gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=app
+WorkingDirectory=/opt/udyam
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/udyam-gateway.env
+ExecStart=/usr/bin/env npm run gateway
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

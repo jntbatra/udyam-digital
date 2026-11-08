@@ -1,0 +1,9 @@
+[Unit]
+Description=Udyam: pull from GitHub, rebuild, restart
+
+[Service]
+Type=oneshot
+User=app
+WorkingDirectory=/opt/udyam
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/udyam/deploy/server-sync.sh
