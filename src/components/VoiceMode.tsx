@@ -282,8 +282,18 @@ export function VoiceMode({ sessionId, language, onUpdate }: { sessionId: string
           break;
       }
     };
-    ws.onerror = () => setNote(hi ? "वॉइस सर्वर से कनेक्ट नहीं हो पाया।" : "Could not reach the voice server.");
+    let opened = false;
+    ws.onopen = () => {
+      opened = true;
+    };
+    ws.onerror = () =>
+      setNote(
+        hi
+          ? "वॉइस से कनेक्ट नहीं हो पाया। पेज रीलोड करें (ज़रूरत हो तो एक्सेस कोड फिर डालें)।"
+          : "Couldn't connect to voice. Reload the page (and enter the access code again if asked).",
+      );
     ws.onclose = () => {
+      if (!opened) setState("idle");
       if (activeRef.current) cleanup();
     };
   }, [sessionId, playPcm, flushPlayback, cleanup, hi, T.micErr, T.limit]);

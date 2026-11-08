@@ -13,7 +13,9 @@ const PORT = Number(process.env.GATEWAY_PORT || 8080);
 const APP_PORT = Number(process.env.APP_PORT || 3100);
 const VOICE_PORT = Number(process.env.VOICE_PORT || 3001);
 const CODE = process.env.ACCESS_CODE || crypto.randomBytes(3).toString("hex").toUpperCase();
-const SECRET = crypto.randomBytes(16).toString("hex");
+// Stable across restarts for the same code (so a gateway restart doesn't log everyone out).
+// Set GATEWAY_SECRET to rotate all cookies without changing the code.
+const SECRET = process.env.GATEWAY_SECRET || crypto.createHash("sha256").update(`udyam-gateway:${CODE}`).digest("hex");
 const TOKEN = crypto.createHmac("sha256", SECRET).update(CODE).digest("hex").slice(0, 32);
 const COOKIE = "udyam_access";
 
