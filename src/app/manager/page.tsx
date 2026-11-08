@@ -477,7 +477,7 @@ function DiscountQueue({ disc, nameOf, onChange }: { disc: DiscountsResponse | n
 }
 
 function DemoTag() {
-  return <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/[0.06] text-muted font-semibold" title="Temporary demo request">Demo</span>;
+  return <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/[0.06] text-muted font-semibold" title="Built from the hackathon dataset (smb_leads.csv)">Dataset</span>;
 }
 
 function DiscountCard({ d, now, nameOf, onChange }: { d: DiscountView; now: number; nameOf: (id?: string) => string; onChange: () => void }) {
