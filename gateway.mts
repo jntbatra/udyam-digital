@@ -18,8 +18,11 @@ const CODE = process.env.ACCESS_CODE || crypto.randomBytes(3).toString("hex").to
 const SECRET = process.env.GATEWAY_SECRET || crypto.createHash("sha256").update(`udyam-gateway:${CODE}`).digest("hex");
 const TOKEN = crypto.createHmac("sha256", SECRET).update(CODE).digest("hex").slice(0, 32);
 const COOKIE = "udyam_access";
+// GATEWAY_OPEN=1 disables the access code (public demo). Routing stays the same.
+const OPEN = process.env.GATEWAY_OPEN === "1";
 
 function authed(req: http.IncomingMessage) {
+  if (OPEN) return true;
   const c = req.headers.cookie ?? "";
   return c.split(/;\s*/).some((p) => p === `${COOKIE}=${TOKEN}`);
 }
@@ -38,6 +41,10 @@ button{margin-top:12px;width:100%;height:44px;border:0;border-radius:999px;backg
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
+  if (url.pathname === "/__access" && OPEN) {
+    res.writeHead(302, { location: "/" });
+    return res.end();
+  }
   if (url.pathname === "/__access") {
     const ok = (url.searchParams.get("code") ?? "").trim().toUpperCase() === CODE;
     if (!ok) {
@@ -86,5 +93,5 @@ server.on("upgrade", (req, socket, head) => {
 
 server.listen(PORT, () => {
   console.log(`gateway on http://localhost:${PORT} -> app :${APP_PORT}, voice :${VOICE_PORT}`);
-  console.log(`ACCESS CODE: ${CODE}`);
+  console.log(OPEN ? "OPEN MODE: no access code required" : `ACCESS CODE: ${CODE}`);
 });

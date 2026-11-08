@@ -43,7 +43,7 @@ SARVAM_PACE=1.2
 SONIC_MAX_SECONDS=600
 ENV
 chmod 600 "$APP/.env.local"
-echo "ACCESS_CODE=$(param /udyam/access_code)" > /etc/udyam-gateway.env; chmod 600 /etc/udyam-gateway.env
+printf "ACCESS_CODE=%s\nGATEWAY_OPEN=1\n" "$(param /udyam/access_code)" > /etc/udyam-gateway.env; chmod 600 /etc/udyam-gateway.env   # GATEWAY_OPEN=1: public, no code
 
 # build
 chown -R app:app "$APP"
