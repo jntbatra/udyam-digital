@@ -270,7 +270,7 @@ for i, r in enumerate(rows):
         c.fill.solid(); c.fill.fore_color.rgb = CHAR if i == 0 else (PINK if i % 2 else WHITE)
 box(s, 6.75, 2.1, 2.9, 2.95, fill=SOFT, radius=0.05)
 tb(s, 6.85, 2.14, 2.7, 0.22, "SECURITY CONTROLS", size=7.5, bold=True, color=RED)
-ctrl = ["Access-code gateway, HttpOnly cookie; role views (owner / expert / manager)", "Keys only on the server; AWS calls signed (SigV4)", "OCR in memory; images never written to disk",
+ctrl = ["No open ports (Cloudflare Tunnel); role views (owner / expert / manager)", "Keys only on the server; AWS calls signed (SigV4)", "OCR in memory; images never written to disk",
         "Identifiers masked in UI and logs; no personal data in app logs", "AI and hosting in AWS Mumbai (ap-south-1)"]
 for j, c in enumerate(ctrl):
     tb(s, 6.85, 2.38 + j * 0.37, 2.72, 0.36, [[("✓ ", {"bold": True, "color": RED}), (c, {})]], size=7.5)

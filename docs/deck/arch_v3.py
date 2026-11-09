@@ -61,8 +61,8 @@ for k, t in enumerate(["TLS: HTTPS + WSS", "No open ports on host", "One public 
 arrow(s, 3.02, TOP + 1.52, 3.02, TOP + 1.66, RED)
 card(s, 2.29, TOP + 1.68, 1.46, 0.79)
 icon_tile(s, "gateway", 2.34, TOP + 1.74, 0.32)
-title_lines(s, 2.7, TOP + 1.72, 1.03, 0.32, "Gateway :8080", "access control", 7.5, 6)
-for k, t in enumerate(["Access code + cookie", "/voice → :3001, rest → :3100"]):
+title_lines(s, 2.7, TOP + 1.72, 1.03, 0.32, "Gateway :8080", "routing (+ optional code)", 7.5, 6)
+for k, t in enumerate(["Optional access code", "/voice → :3001, rest → :3100"]):
     tb(s, 2.35, TOP + 2.06 + k * 0.19, 1.38, 0.19, [[("✓ ", {"bold": True, "color": RED}), (t, {})]], size=6.2)
 
 # ---- 3. Application
@@ -116,7 +116,7 @@ for k, (t, sub) in enumerate(flow):
 box(s, 5.4, Y2, 2.18, 1.2, fill=WHITE, line=LINE, radius=0.06)
 icon(s, "deploy", 5.48, Y2 + 0.06, 0.2)
 tb(s, 5.72, Y2 + 0.03, 1.8, 0.25, "Deployment", size=8.5, bold=True, color=RED, anchor=MSO_ANCHOR.MIDDLE)
-dep = ["Prototype: host machine + Cloudflare Tunnel", "AI in AWS ap-south-1 (Bedrock, Textract)", "Push to GitHub → live in ~10 s", "Plan: AWS Mumbai hosting + managed DB"]
+dep = ["EC2 t3a.small, Mumbai, via Cloudflare Tunnel", "No inbound ports; keys in AWS SSM + IAM role", "Push to GitHub → live in ~2 min", "Next: managed DB + object storage"]
 for k, t in enumerate(dep):
     tb(s, 5.47, Y2 + 0.32 + k * 0.215, 2.08, 0.22, [[("✓ ", {"bold": True, "color": RED}), (t, {})]], size=6.2)
 box(s, 7.68, Y2, 1.97, 1.2, fill=PINK, radius=0.06)
